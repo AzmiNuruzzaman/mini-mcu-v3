@@ -1,0 +1,29 @@
+# Django core
+Django>=5.0,<6.0
+
+# Database
+psycopg2-binary
+dj-database-url
+python-dotenv
+
+# Data & Excel
+pandas
+openpyxl
+XlsxWriter
+
+# Security / hashing
+bcrypt
+
+# Utilities
+pillow
+qrcode[pil]
+requests
+
+# Visualization
+plotly
+
+# Static serving for production
+whitenoise
+
+# WSGI server for production
+gunicorn

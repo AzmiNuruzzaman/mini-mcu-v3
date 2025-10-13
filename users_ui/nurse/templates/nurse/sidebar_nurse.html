@@ -1,0 +1,60 @@
+{% extends "shared/shared_sidebar.html" %}
+{% load static %}
+
+{% block sidebar_menu %}
+  <ul class="flex flex-col gap-2">
+
+    <!-- Dashboard -->
+    <li>
+      <a href="{% url 'nurse:dashboard' %}"
+         class="flex items-center gap-3 py-3 px-4 rounded-lg transition-all cursor-pointer
+                {% if active_menu == 'dashboard' %}bg-white/20 shadow-lg border-l-4 border-white{% else %}hover:bg-white/10{% endif %}">
+        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M3 3h18v18H3V3z"/>
+        </svg>
+        <span class="text-white font-medium">Dashboard</span>
+      </a>
+    </li>
+
+    <!-- QR Codes -->
+    <li>
+      <a href="{% if menu_items %}{% for item in menu_items %}{% if item.key == 'qr' %}{{ item.url }}{% endif %}{% endfor %}{% else %}#{% endif %}"
+         class="flex items-center gap-3 py-3 px-4 rounded-lg transition-all cursor-pointer
+                {% if active_menu == 'qr' %}bg-white/20 shadow-lg border-l-4 border-white{% else %}hover:bg-white/10{% endif %}">
+        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 4h16v16H4V4z"/>
+        </svg>
+        <span class="text-white font-medium">QR Codes</span>
+      </a>
+    </li>
+
+    <!-- Upload / Export Data -->
+    <li>
+      <a href="{% url 'nurse:upload_export' %}"
+         class="flex items-center gap-3 py-3 px-4 rounded-lg transition-all cursor-pointer
+                {% if active_menu == 'upload_export' %}bg-white/20 shadow-lg border-l-4 border-white{% else %}hover:bg-white/10{% endif %}">
+        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 4v16m8-8H4"/>
+        </svg>
+        <span class="text-white font-medium">Upload / Export Data</span>
+      </a>
+    </li>
+
+    <!-- Edit Karyawan Data -->
+    <li>
+      <a href="{% if menu_items %}{% for item in menu_items %}{% if item.key == 'edit_karyawan' %}{{ item.url }}{% endif %}{% endfor %}{% else %}#{% endif %}"
+         class="flex items-center gap-3 py-3 px-4 rounded-lg transition-all cursor-pointer
+                {% if active_menu == 'edit_karyawan' %}bg-white/20 shadow-lg border-l-4 border-white{% else %}hover:bg-white/10{% endif %}">
+        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M5 12h14"/>
+        </svg>
+        <span class="text-white font-medium">Edit Karyawan Data</span>
+      </a>
+    </li>
+
+  </ul>
+{% endblock %}

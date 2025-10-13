@@ -1,0 +1,29 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.swp
+*.tmp
+*.log
+
+# Virtual environments
+venv/
+.venv/
+
+# Django
+.db.sqlite3
+/db.sqlite3
+/media/
+/staticfiles/
+
+# Environment variables
+.env
+
+# Jupyter
+.ipynb_checkpoints/

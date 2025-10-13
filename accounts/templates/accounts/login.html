@@ -1,0 +1,99 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Mini-MCU Login</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* On the login page, ensure only the intended login button is visible */
+      .login-page button:not(#login-button),
+      .login-page input[type="submit"]:not(#login-button) {
+        display: none !important;
+      }
+    </style>
+</head>
+<body class="login-page min-h-screen flex flex-col md:flex-row">
+
+    <!-- Left Side - Logo Section -->
+    <div class="flex-1 bg-white flex flex-col items-center justify-center p-8 md:p-12 relative">
+        <div class="w-full max-w-md">
+            <img src="{% static 'images/logo.png' %}" alt="Pertamina EP CEPU Logo" class="w-full h-auto object-contain">
+        </div>
+        <!-- Footer Text -->
+        <div class="absolute bottom-8 left-0 right-0 text-center">
+            <p class="text-gray-600 italic text-sm">Pertamina EP CEPU 2025</p>
+        </div>
+    </div>
+
+    <!-- Right Side - Login Form -->
+    <div class="flex-1 bg-[#0073fe] flex items-center justify-center p-8 md:p-12 login-panel">
+        <div class="w-full max-w-md">
+            <h1 class="text-white text-center mb-12 tracking-wide text-xl md:text-2xl font-semibold">
+                SELAMAT DATANG DI MINI - MCU
+            </h1>
+
+            {% if request.session.error_message %}
+                <div class="mb-4 text-red-200">{{ request.session.error_message }}</div>
+            {% endif %}
+            {% if request.session.success_message %}
+                <div class="mb-4 text-green-200">{{ request.session.success_message }}</div>
+            {% endif %}
+            {% if request.session.info_message %}
+                <div class="mb-4 text-blue-200">{{ request.session.info_message }}</div>
+            {% endif %}
+            {% if request.session.warning_message %}
+                <div class="mb-4 text-yellow-200">{{ request.session.warning_message }}</div>
+            {% endif %}
+
+            <form method="POST" class="space-y-6">
+                {% csrf_token %}
+                
+                <!-- User ID -->
+                <div class="space-y-2">
+                    <label for="username" class="text-white/90 text-sm">User ID</label>
+                    <input
+                        id="username"
+                        name="username"
+                        type="text"
+                        placeholder="enter id here"
+-                        class="bg-white border-none shadow-lg h-14 w-full text-gray-800 placeholder:text-gray-400 rounded-md px-4"
++                        class="bg-white border-none shadow-xl h-14 w-full text-gray-800 placeholder:text-gray-400 rounded-md px-4"
+                    >
+                    {% if form.username.errors %}
+                        <div class="text-red-200 text-sm">{{ form.username.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <!-- Password -->
+                <div class="space-y-2">
+                    <label for="password" class="text-white/90 text-sm">Password</label>
+                    <input
+                        id="password"
+                        name="password"
+                        type="password"
+                        placeholder="password"
+-                        class="bg-white border-none shadow-lg h-14 w-full text-gray-800 placeholder:text-gray-400 rounded-md px-4"
++                        class="bg-white border-none shadow-xl h-14 w-full text-gray-800 placeholder:text-gray-400 rounded-md px-4"
+                    >
+                    {% if form.password.errors %}
+                        <div class="text-red-200 text-sm">{{ form.password.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <!-- Forgot Password -->
+                <div class="flex justify-end">
+                    <a href="#" class="text-white text-sm hover:underline transition-all">Forgot Password?</a>
+                </div>
+
+                <!-- Submit Button -->
+-                <button type="submit" class="w-full bg-green-600 text-white hover:bg-green-700 h-12 shadow-lg rounded-md transition-all">
++                <button id="login-button" type="submit" class="w-full bg-[#9fe400] text-white hover:bg-[#8bd200] h-12 shadow-xl rounded-md transition-all">
+                     LOGIN
+                 </button>
+            </form>
+        </div>
+    </div>
+
+</body>
+</html>

@@ -1,0 +1,223 @@
+{% extends "nurse/nurse_index.html" %}
+{% load static %}
+
+{% block title %}Nurse Dashboard - {{ active_menu_label }}{% endblock %}
+
+{% block page_content %}
+<div class="bg-white rounded-lg shadow-md p-6">
+  <!-- Submenu Navigation -->
+  <div class="flex gap-6 mb-4 px-3 pt-3 border-b border-slate-300 bg-white rounded-t-xl shadow-sm">
+      <a href="?submenu=edit" 
+         class="hidden pb-3 px-4 font-medium text-gray-700 hover:text-blue-600 transition-colors
+                {% if active_submenu == 'edit' %}text-blue-600 border-b-2 border-blue-600{% endif %}">
+          Karyawan Profile
+      </a>
+      <a href="{% if view_only %}?uid={{ employee.uid }}&submenu=data_karyawan{% else %}?submenu=data_karyawan{% endif %}" 
+         class="pb-3 px-4 font-medium text-gray-700 hover:bg-slate-100 rounded-t-md border border-slate-300 -mb-px transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300
+                {% if active_submenu == 'data_karyawan' %}bg-blue-600 text-white border-blue-600{% endif %}">
+          Data Karyawan
+      </a>
+      <a href="?submenu=edit_data" 
+         class="hidden pb-3 px-4 font-medium text-gray-700 hover:text-blue-600 transition-colors
+                {% if active_submenu == 'edit_data' %}text-blue-600 border-b-2 border-blue-600{% endif %}">
+          Edit Karyawan Data
+      </a>
+      <a href="{% if view_only %}?uid={{ employee.uid }}&submenu=history{% else %}?submenu=history{% endif %}" 
+         class="pb-3 px-4 font-medium text-gray-700 hover:bg-slate-100 rounded-t-md border border-slate-300 -mb-px transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300
+                {% if active_submenu == 'history' %}bg-blue-600 text-white border-blue-600{% endif %}">
+          History Medical Check Up
+      </a>
+  </div>
+
+  {% if active_submenu == 'data_karyawan' %}
+  <!-- Inner tabs under Data Karyawan -->
+  <div class="flex gap-2 mb-4 px-3 pt-3 border-b border-slate-300 bg-white rounded-t-md shadow-sm overflow-x-auto whitespace-nowrap">
+      <a href="?submenu=data_karyawan&subtab=profile" 
+         class="pb-2 px-3 font-medium text-gray-700 hover:bg-slate-100 rounded-t-md border border-slate-300 -mb-px transition-colors focus:outline-none focus:ring-2 focus:ring-green-300
+                {% if active_subtab == 'profile' %}bg-green-600 text-white border-green-600{% endif %}">
+          Karyawan Profile
+      </a>
+      <a href="?submenu=data_karyawan&subtab=edit_data" 
+         class="pb-2 px-3 font-medium text-gray-700 hover:bg-slate-100 rounded-t-md border border-slate-300 -mb-px transition-colors focus:outline-none focus:ring-2 focus:ring-green-300
+                {% if active_subtab == 'edit_data' %}bg-green-600 text-white border-green-600{% endif %}">
+          Edit Karyawan Data
+      </a>
+  </div>
+  {% endif %}
+
+  <!-- Edit Data Karyawan Content (now shown under Data Karyawan > Karyawan Profile) -->
+  <div id="edit-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4 {% if active_submenu != 'data_karyawan' or active_subtab != 'profile' %}hidden{% endif %}">
+      <h2 class="text-xl font-bold mb-3">Edit Karyawan</h2>
+
+      <!-- 1. Selector box by nama on the top -->
+      <form method="get" class="mb-4">
+        <input type="hidden" name="submenu" value="data_karyawan"/>
+        <input type="hidden" name="subtab" value="profile"/>
+        <label for="uid" class="block mb-2 font-medium">Pilih Karyawan (Nama):</label>
+        <select name="uid" id="uid" class="select2 border px-2 py-1 rounded w-full" onchange="this.form.submit()">
+          {% for e in employees %}
+            <option value="{{ e.uid }}" {% if employee.uid == e.uid %}selected{% endif %}>{{ e.nama }}</option>
+          {% endfor %}
+        </select>
+      </form>
+
+      <!-- 2. Dataframe style display karyawan info with editable kontak darurat -->
+      <section class="p-4 bg-white shadow rounded">
+        <div class="overflow-x-auto">
+          <table class="min-w-full table-auto border-collapse border border-gray-300">
+            <thead>
+              <tr class="bg-gray-100">
+                <th class="border px-4 py-2 text-left">Field</th>
+                <th class="border px-4 py-2 text-left">Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="border px-4 py-2">Nama</td>
+                <td class="border px-4 py-2">{{ employee.nama }}</td>
+              </tr>
+              <tr>
+                <td class="border px-4 py-2">Jabatan</td>
+                <td class="border px-4 py-2">{{ employee.jabatan }}</td>
+              </tr>
+              <tr>
+                <td class="border px-4 py-2">Lokasi</td>
+                <td class="border px-4 py-2">{{ employee.lokasi }}</td>
+              </tr>
+              <tr>
+                <td class="border px-4 py-2">Kontak Darurat</td>
+                <td class="border px-4 py-2">
+                  {% if not view_only %}
+                  <form method="post" action="{% url 'nurse:karyawan_detail' employee.uid %}?submenu=edit" class="flex items-center gap-2">
+                    {% csrf_token %}
+                    <input type="text" name="kontak_darurat" value="{{ employee.kontak_darurat|default:'' }}" placeholder="Masukkan kontak darurat" class="border px-2 py-1 rounded w-full"/>
+                    <button type="submit" class="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600">Simpan</button>
+                  </form>
+                  {% else %}
+                    {{ employee.kontak_darurat|default:"-" }}
+                  {% endif %}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 3. Latest Medical Checkup (DataFrame-style) -->
+      <section class="mt-6 p-4 bg-white shadow rounded">
+        <h3 class="text-lg font-semibold mb-3">Data Checkup Terakhir</h3>
+        {% if latest_checkup %}
+        <div class="overflow-x-auto">
+          <table class="min-w-full table-auto border-collapse border border-gray-300">
+            <thead>
+              <tr class="bg-gray-100">
+                <th class="border px-4 py-2 text-left">Field</th>
+                <th class="border px-4 py-2 text-left">Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="border px-4 py-2">Tanggal Checkup</td>
+                <td class="border px-4 py-2">{{ latest_checkup.tanggal_checkup }}</td>
+              </tr>
+              <tr>
+                <td class="border px-4 py-2">BMI</td>
+                <td class="border px-4 py-2 {% if latest_checkup.flags and latest_checkup.flags.bmi_high %}text-red-600 font-semibold{% endif %}">{{ latest_checkup.bmi|default:"-" }}</td>
+              </tr>
+              <tr>
+                <td class="border px-4 py-2">Gula Darah Puasa</td>
+                <td class="border px-4 py-2 {% if latest_checkup.flags and latest_checkup.flags.gdp_high %}text-red-600 font-semibold{% endif %}">{{ latest_checkup.gula_darah_puasa|default:"-" }}</td>
+              </tr>
+              <tr>
+                <td class="border px-4 py-2">Gula Darah Sewaktu</td>
+                <td class="border px-4 py-2 {% if latest_checkup.flags and latest_checkup.flags.gds_high %}text-red-600 font-semibold{% endif %}">{{ latest_checkup.gula_darah_sewaktu|default:"-" }}</td>
+              </tr>
+              <tr>
+                <td class="border px-4 py-2">Cholesterol</td>
+                <td class="border px-4 py-2 {% if latest_checkup.flags and latest_checkup.flags.chol_high %}text-red-600 font-semibold{% endif %}">{{ latest_checkup.cholesterol|default:"-" }}</td>
+              </tr>
+              <tr>
+                <td class="border px-4 py-2">Asam Urat</td>
+                <td class="border px-4 py-2 {% if latest_checkup.flags and latest_checkup.flags.asam_high %}text-red-600 font-semibold{% endif %}">{{ latest_checkup.asam_urat|default:"-" }}</td>
+              </tr>
+              <tr>
+                <td class="border px-4 py-2">Status</td>
+                <td class="border px-4 py-2">
+                  {% if latest_checkup and latest_checkup.status %}
+                    <span class="inline-block px-2 py-1 rounded text-white {% if latest_checkup.status == 'Unwell' %}bg-red-500{% else %}bg-green-500{% endif %}">{{ latest_checkup.status }}</span>
+                  {% else %}
+                    <span class="text-gray-500">-</span>
+                  {% endif %}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+          <div class="p-4 bg-gray-50 border rounded text-gray-500">Belum ada data medical checkup.</div>
+        {% endif %}
+      </section>
+  </div>
+
+  <!-- Edit Karyawan Data Content (empty; now under Data Karyawan > Edit Karyawan Data) -->
+  <div id="edit-data-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4 {% if active_submenu != 'data_karyawan' or active_subtab != 'edit_data' %}hidden{% endif %}">
+      <h2 class="text-xl font-bold mb-3">Edit Karyawan Data</h2>
+      <div class="mb-2">
+         <span class="text-sm text-green-600 font-semibold cursor-help" title="Pilih karyawan di tab Karyawan Profile">Pilih karyawan di tab Karyawan Profile</span>
+      </div>
+      <!-- Removed duplicate Karyawan name label as it's already shown in the container/header -->
+      {% include 'nurse/partials/edit_karyawan_form.html' with karyawan=employee %}
+  </div>
+
+  <!-- History Medical Check Up Content -->
+  <div id="history-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4 {% if active_submenu != 'history' %}hidden{% endif %}">
+      <h2 class="text-xl font-bold mb-3">History Medical Check Up</h2>
+      {% if history_checkups and history_checkups|length > 0 %}
+      <div class="overflow-x-auto">
+        <table class="min-w-full table-auto border-collapse border border-gray-300">
+          <thead>
+            <tr class="bg-gray-100">
+              <th class="border px-4 py-2 text-left">Tanggal</th>
+              <th class="border px-4 py-2 text-left">BMI</th>
+              <th class="border px-4 py-2 text-left">Berat</th>
+              <th class="border px-4 py-2 text-left">Tinggi</th>
+              <th class="border px-4 py-2 text-left">Lingkar Perut</th>
+              <th class="border px-4 py-2 text-left">GDP</th>
+              <th class="border px-4 py-2 text-left">GDS</th>
+              <th class="border px-4 py-2 text-left">Chol</th>
+              <th class="border px-4 py-2 text-left">Asam Urat</th>
+              <th class="border px-4 py-2 text-left">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for rec in history_checkups %}
+            <tr>
+              <td class="border px-4 py-2">{{ rec.tanggal_checkup|default:"-" }}</td>
+              <td class="border px-4 py-2 {% if rec.flags and rec.flags.bmi_high %}text-red-600 font-semibold{% endif %}">{{ rec.bmi|default:"-" }}</td>
+              <td class="border px-4 py-2">{{ rec.berat|default:"-" }}</td>
+              <td class="border px-4 py-2">{{ rec.tinggi|default:"-" }}</td>
+              <td class="border px-4 py-2">{{ rec.lingkar_perut|default:"-" }}</td>
+              <td class="border px-4 py-2 {% if rec.flags and rec.flags.gdp_high %}text-red-600 font-semibold{% endif %}">{{ rec.gula_darah_puasa|default:"-" }}</td>
+              <td class="border px-4 py-2 {% if rec.flags and rec.flags.gds_high %}text-red-600 font-semibold{% endif %}">{{ rec.gula_darah_sewaktu|default:"-" }}</td>
+              <td class="border px-4 py-2 {% if rec.flags and rec.flags.chol_high %}text-red-600 font-semibold{% endif %}">{{ rec.cholesterol|default:"-" }}</td>
+              <td class="border px-4 py-2 {% if rec.flags and rec.flags.asam_high %}text-red-600 font-semibold{% endif %}">{{ rec.asam_urat|default:"-" }}</td>
+              <td class="border px-4 py-2">
+                {% if rec.status %}
+                  <span class="inline-block px-2 py-1 rounded text-white {% if rec.status == 'Unwell' %}bg-red-500{% else %}bg-green-500{% endif %}">{{ rec.status }}</span>
+                {% else %}
+                  <span class="text-gray-500">-</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        <div class="p-4 bg-gray-50 border rounded text-gray-500">
+          Belum ada data medical checkup.
+        </div>
+      {% endif %}
+  </div>
+</div>
+{% endblock %}

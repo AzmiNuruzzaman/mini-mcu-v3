@@ -1,0 +1,162 @@
+<!-- users_interface/master/templates/master/master_index.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2 class="mb-4">🛡️ Master Dashboard</h2>
+
+    <!-- Flash messages -->
+    {% if request.session.error_message %}
+        <div class="alert alert-danger">{{ request.session.error_message }}</div>
+    {% endif %}
+    {% if request.session.success_message %}
+        <div class="alert alert-success">{{ request.session.success_message }}</div>
+    {% endif %}
+    {% if request.session.info_message %}
+        <div class="alert alert-info">{{ request.session.info_message }}</div>
+    {% endif %}
+    {% if request.session.warning_message %}
+        <div class="alert alert-warning">{{ request.session.warning_message }}</div>
+    {% endif %}
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs" id="masterTab" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="data-tab" data-bs-toggle="tab" data-bs-target="#data" type="button">Data Management</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="user-tab" data-bs-toggle="tab" data-bs-target="#user" type="button">User Management</button>
+        </li>
+    </ul>
+
+    <div class="tab-content mt-3">
+        <!-- ---------------- Data Management ---------------- -->
+        <div class="tab-pane fade show active" id="data" role="tabpanel">
+            <h4>📂 Riwayat Upload Master Karyawan</h4>
+
+            {% if history %}
+                <div class="table-responsive mb-3">
+                    <table class="table table-striped table-bordered">
+                        <thead>
+                            <tr>
+                                {% for key in history.0.keys %}
+                                    <th>{{ key|capfirst }}</th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in history %}
+                                <tr>
+                                    {% for key, value in row.items %}
+                                        <td>{{ value }}</td>
+                                    {% endfor %}
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <form method="post" class="mb-2">
+                    {% csrf_token %}
+                    <div class="mb-2">
+                        <label>Pilih Batch untuk dihapus</label>
+                        <select name="batch_id" class="form-select">
+                            {% for row in history %}
+                                <option value="{{ row.upload_batch_id }}">{{ row.upload_batch_id }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <button type="submit" name="delete_batch" class="btn btn-danger">🗑️ Hapus Batch Terpilih</button>
+                    <button type="submit" name="delete_all_batches" class="btn btn-danger">🗑️ Hapus Semua Batch</button>
+                </form>
+            {% else %}
+                <p class="text-muted">Belum ada riwayat upload master karyawan.</p>
+            {% endif %}
+        </div>
+
+        <!-- ---------------- User Management ---------------- -->
+        <div class="tab-pane fade" id="user" role="tabpanel">
+            <h4>👥 Active Users Count</h4>
+            <p>Manager Users: {{ manager_count }}</p>
+            <p>Nurse Users: {{ nurse_count }}</p>
+
+            <hr>
+            <h5>Tambah User Baru</h5>
+            <form method="post" class="mb-3">
+                {% csrf_token %}
+                <div class="mb-2">
+                    <input type="text" name="username" placeholder="Username" class="form-control mb-2">
+                    <input type="password" name="password" placeholder="Password" class="form-control mb-2">
+                    <select name="role" class="form-select mb-2">
+                        <option value="Manager">Manager</option>
+                        <option value="Tenaga Kesehatan">Tenaga Kesehatan</option>
+                    </select>
+                </div>
+                <button type="submit" name="add_user" class="btn btn-success">Add User</button>
+            </form>
+
+            <hr>
+            <h5>Existing Users</h5>
+            {% if users %}
+                <div class="table-responsive mb-3">
+                    <table class="table table-striped table-bordered">
+                        <thead>
+                            <tr>
+                                {% for key in users.0.keys %}
+                                    <th>{{ key|capfirst }}</th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in users %}
+                                <tr>
+                                    {% for key, value in row.items %}
+                                        <td>{{ value }}</td>
+                                    {% endfor %}
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Delete User -->
+                <form method="post" class="mb-2">
+                    {% csrf_token %}
+                    <div class="mb-2">
+                        <select name="del_username" class="form-select mb-2">
+                            {% for u in users %}
+                                <option value="{{ u.username }}">{{ u.username }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <button type="submit" name="delete_user" class="btn btn-danger">Hapus User Terpilih</button>
+                </form>
+
+                <!-- Reset Password Single User -->
+                <form method="post" class="mb-2">
+                    {% csrf_token %}
+                    <div class="mb-2">
+                        <select name="reset_username" class="form-select mb-2">
+                            {% for u in users %}
+                                <option value="{{ u.username }}">{{ u.username }}</option>
+                            {% endfor %}
+                        </select>
+                        <input type="password" name="new_password" placeholder="Password baru" class="form-control mb-2">
+                    </div>
+                    <button type="submit" name="reset_user_password" class="btn btn-warning">Reset Password</button>
+                </form>
+
+                <!-- Reset All Passwords -->
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="password" name="default_pw_all" placeholder="Password default" class="form-control mb-2">
+                    <button type="submit" name="reset_all_passwords" class="btn btn-warning">Reset Semua Password</button>
+                </form>
+            {% else %}
+                <p class="text-muted">Belum ada user aktif.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"></script>
+{% endblock %}

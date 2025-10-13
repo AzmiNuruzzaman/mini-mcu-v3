@@ -1,0 +1,23 @@
+{% extends "nurse/nurse_index.html" %}
+{% load static %}
+
+{% block page_content %}
+<div class="bg-white rounded-lg shadow p-6">
+  <section class="mb-6">
+    {% include "nurse/partials/qr_export.html" %}
+  </section>
+
+  <section>
+    <h3 class="text-lg font-semibold mb-2">Preview</h3>
+    <div class="p-4 bg-gray-50 border rounded text-center">
+      {% if qr_base64 %}
+        <h4 class="text-md font-medium mb-2">QR Code untuk {{ selected_name }}</h4>
+        <img src="data:image/png;base64,{{ qr_base64 }}" alt="QR Code" class="mx-auto mb-4" style="width: 200px; height: 200px;"/>
+        <p class="text-sm text-gray-600">Scan QR code untuk mengakses data karyawan</p>
+      {% else %}
+        <p class="text-gray-500">Pilih karyawan untuk melihat preview QR code</p>
+      {% endif %}
+    </div>
+  </section>
+</div>
+{% endblock %}

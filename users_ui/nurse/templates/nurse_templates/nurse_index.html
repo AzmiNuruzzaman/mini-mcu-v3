@@ -1,0 +1,102 @@
+<!-- users_ui/nurse/templates/nurse_templates/nurse_index.html -->
+{% extends "shared/base.html" %}
+
+{% block content %}
+<div class="container mt-8">
+    <h1 class="text-2xl font-bold mb-6">Nurse Dashboard</h1>
+
+    <!-- Tabs Navigation -->
+    <div class="mb-6 border-b border-gray-200">
+        <ul class="flex flex-wrap -mb-px text-sm font-medium text-center" id="nurse-tabs">
+            <li class="mr-2">
+                <button class="inline-block p-4 rounded-t-lg border-b-2 active-tab" data-tab="tab1">Dashboard</button>
+            </li>
+            <li class="mr-2">
+                <button class="inline-block p-4 rounded-t-lg border-b-2" data-tab="tab2">Data Karyawan</button>
+            </li>
+            <li class="mr-2">
+                <button class="inline-block p-4 rounded-t-lg border-b-2" data-tab="tab3">Upload Checkup</button>
+            </li>
+            <li class="mr-2">
+                <button class="inline-block p-4 rounded-t-lg border-b-2" data-tab="tab4">Edit Karyawan</button>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Tab 1: Dashboard -->
+    <div id="tab1" class="tab-content">
+        <h2 class="text-xl font-semibold mb-4">Riwayat Checkup Karyawan</h2>
+        <div class="overflow-x-auto bg-white rounded shadow p-4">
+            <table class="min-w-full table-auto border-collapse border border-gray-300">
+                <thead>
+                    <tr class="bg-gray-100">
+                        <th class="px-4 py-2 border">UID</th>
+                        <th class="px-4 py-2 border">Nama</th>
+                        <th class="px-4 py-2 border">Jabatan</th>
+                        <th class="px-4 py-2 border">Lokasi</th>
+                        <th class="px-4 py-2 border">Terakhir Checkup</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for karyawan in karyawan_list %}
+                    <tr class="text-center">
+                        <td class="px-4 py-2 border">{{ karyawan.uid }}</td>
+                        <td class="px-4 py-2 border">{{ karyawan.nama }}</td>
+                        <td class="px-4 py-2 border">{{ karyawan.jabatan }}</td>
+                        <td class="px-4 py-2 border">{{ karyawan.lokasi }}</td>
+                        <td class="px-4 py-2 border">{{ karyawan.tanggal_checkup|default:"-" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="px-4 py-2 border text-center text-gray-500">Belum ada data karyawan.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Tab 2: Data Karyawan -->
+    <div id="tab2" class="tab-content hidden">
+        <h2 class="text-xl font-semibold mb-4">Data Karyawan</h2>
+        <p class="text-gray-600">Klik UID karyawan di tab Dashboard untuk melihat detail.</p>
+    </div>
+
+    <!-- Tab 3: Upload Checkup -->
+    <div id="tab3" class="tab-content hidden">
+        <h2 class="text-xl font-semibold mb-4">Upload Medical Checkup</h2>
+        <div class="bg-white p-4 rounded shadow">
+            <form method="POST" enctype="multipart/form-data" action="{% url 'nurse:upload_checkup' %}">
+                {% csrf_token %}
+                <input type="file" name="file" accept=".xls,.xlsx" class="mb-2" required>
+                <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded">Upload Medical Checkup</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Tab 4: Edit Karyawan -->
+    <div id="tab4" class="tab-content hidden">
+        <h2 class="text-xl font-semibold mb-4">Edit / Update Karyawan Data</h2>
+        <p class="text-gray-600">Pilih karyawan dari tab Dashboard untuk melihat profil dan mengedit data.</p>
+    </div>
+</div>
+
+<!-- Tabs JS -->
+<script>
+    const tabs = document.querySelectorAll("#nurse-tabs button");
+    const tabContents = document.querySelectorAll(".tab-content");
+
+    tabs.forEach(tab => {
+        tab.addEventListener("click", () => {
+            tabs.forEach(t => t.classList.remove("active-tab", "border-blue-500"));
+            tab.classList.add("active-tab", "border-blue-500");
+
+            const target = tab.dataset.tab;
+            tabContents.forEach(tc => {
+                if (tc.id === target) tc.classList.remove("hidden");
+                else tc.classList.add("hidden");
+            });
+        });
+    });
+</script>
+{% endblock %}

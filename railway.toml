@@ -1,0 +1,16 @@
+# Railway configuration for Django app
+[build]
+  builder = "NIXPACKS"
+
+[variables]
+  PYTHONUNBUFFERED = "1"
+  DJANGO_DEBUG = "False"
+  DJANGO_ALLOWED_HOSTS = "*"
+  CSRF_TRUSTED_ORIGINS = "https://*.railway.app,https://*"
+  DJANGO_SERVE_MEDIA = "True"
+  DJANGO_MEDIA_ROOT = "/data/media"
+  DJANGO_MEDIA_URL = "/media/"
+  APP_BASE_URL = ""
+
+[start]
+  cmd = "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn mini_mcu.wsgi:application --bind 0.0.0.0:$PORT --workers 3"

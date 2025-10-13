@@ -1,0 +1,47 @@
+{% extends "shared/shared_base.html" %}
+{% load static %}
+
+{% block title %}Nurse Dashboard - {{ active_menu_label }}{% endblock %}
+
+{% block main_content %}
+<div class="mb-6">
+    <h1 class="text-2xl font-bold text-gray-800">{{ active_menu_label }}</h1>
+</div>
+
+<!-- Toast Notifications -->
+<div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2">
+    {% if success_message %}
+    <div class="toast-item bg-green-600 text-white px-4 py-3 rounded shadow-md flex items-start gap-3" role="alert">
+        <span class="font-semibold">Sukses:</span>
+        <span>{{ success_message }}</span>
+        <button type="button" class="ml-4 text-white/80 hover:text-white" onclick="this.parentElement.remove()">&times;</button>
+    </div>
+    {% endif %}
+    {% if error_message %}
+    <div class="toast-item bg-red-600 text-white px-4 py-3 rounded shadow-md flex items-start gap-3" role="alert">
+        <span class="font-semibold">Error:</span>
+        <span>{{ error_message }}</span>
+        <button type="button" class="ml-4 text-white/80 hover:text-white" onclick="this.parentElement.remove()">&times;</button>
+    </div>
+    {% endif %}
+    {% if warning_message %}
+    <div class="toast-item bg-yellow-500 text-white px-4 py-3 rounded shadow-md flex items-start gap-3" role="alert">
+        <span class="font-semibold">Peringatan:</span>
+        <span>{{ warning_message }}</span>
+        <button type="button" class="ml-4 text-white/80 hover:text-white" onclick="this.parentElement.remove()">&times;</button>
+    </div>
+    {% endif %}
+</div>
+<script>
+  (function(){
+    const items = document.querySelectorAll('#toast-container .toast-item');
+    items.forEach(function(el){
+      setTimeout(function(){
+        if (el && el.parentElement) { el.parentElement.removeChild(el); }
+      }, 4000);
+    });
+  })();
+</script>
+
+{% block page_content %}{% endblock %}
+{% endblock %}

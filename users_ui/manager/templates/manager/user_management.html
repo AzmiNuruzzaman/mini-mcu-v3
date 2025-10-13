@@ -1,0 +1,63 @@
+{% extends 'manager/manager_index.html' %}
+{% load static %}
+
+{% block page_content %}
+<div class="bg-white border border-gray-200 rounded-md shadow-sm">
+  <!-- Folder-style submenu header -->
+  <div class="flex gap-2 px-3 pt-3 border-b border-gray-200">
+    {% with is_active=active_submenu|default:'add_remove' %}
+    <a href="?submenu=add_remove" class="
+      px-3 py-1.5 text-sm font-medium rounded-t-md border border-b-0
+      {% if is_active == 'add_remove' %} bg-blue-600 text-white border-blue-600 {% else %} bg-white text-gray-700 hover:bg-gray-50 border-gray-300 {% endif %}
+      focus:outline-none focus:ring-2 focus:ring-blue-500
+    ">Add / Remove User</a>
+    <a href="?submenu=manage_roles" class="
+      px-3 py-1.5 text-sm font-medium rounded-t-md border border-b-0
+      {% if is_active == 'manage_roles' %} bg-blue-600 text-white border-blue-600 {% else %} bg-white text-gray-700 hover:bg-gray-50 border-gray-300 {% endif %}
+      focus:outline-none focus:ring-2 focus:ring-blue-500
+    ">Manage Roles</a>
+    {% endwith %}
+  </div>
+
+  <div class="px-4 py-4">
+    {% if active_submenu == 'manage_roles' %}
+      <h2 class="text-base font-semibold text-gray-800 mb-3">Manage Roles</h2>
+      <div class="overflow-x-auto">
+        <table class="min-w-full border border-gray-200 rounded-md overflow-hidden">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600 border-b">Username</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600 border-b">Current Role</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600 border-b">Update Role</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            {% for u in users %}
+              <tr>
+                <td class="px-3 py-2 text-sm text-gray-800">{{ u.username }}</td>
+                <td class="px-3 py-2 text-sm text-gray-600">{{ u.role }}</td>
+                <td class="px-3 py-2">
+                  <form action="{% url 'manager:update_user_role' u.id %}" method="post" class="flex items-center gap-2">
+                    {% csrf_token %}
+                    <select name="role" class="px-2 py-1 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="Manager" {% if u.role == 'Manager' %}selected{% endif %}>Manager</option>
+                      <option value="Tenaga Kesehatan" {% if u.role == 'Tenaga Kesehatan' %}selected{% endif %}>Tenaga Kesehatan</option>
+                    </select>
+                    <button type="submit" class="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">Save</button>
+                  </form>
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="3" class="px-3 py-3 text-sm text-gray-500">No users found.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      {% include 'manager/partials/user_form.html' %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

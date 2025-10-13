@@ -1,0 +1,257 @@
+{% extends "nurse/nurse_index.html" %}
+{% load static %}
+
+{% block page_content %}
+<div class="bg-white rounded-lg shadow_md p-6">
+    <!-- Submenu Navigation -->
+    <div class="flex gap-6 mb-6 px-3 pt-3 border-b border-slate-300 bg-white rounded-t-xl shadow-sm">
+        <a href="?submenu=data" 
+           class="pb-3 px-4 font-medium text-gray-700 hover:bg-slate-100 rounded-t-md border border-slate-300 -mb-px transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300
+                  {% if active_submenu == 'data' %}bg-blue-600 text-white border-blue-600{% endif %}">
+            DATA KARYAWAN
+        </a>
+        <a href="?submenu=grafik" 
+           class="pb-3 px-4 font-medium text-gray-700 hover:bg-slate-100 rounded-t-md border border-slate-300 -mb-px transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300
+                  {% if active_submenu == 'grafik' %}bg-blue-600 text-white border-blue-600{% endif %}">
+            GRAFIK
+        </a>
+    </div>
+
+    <!-- Data Karyawan Content -->
+    <div id="data-content" class="{% if active_submenu != 'data' %}hidden{% endif %}">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div class="bg-blue-100 p-4 rounded-lg">
+                <h3 class="text-lg font-semibold text-blue-800">Total Karyawan</h3>
+                <p class="text-2xl font-bold text-blue-900">{{ total_karyawan }}</p>
+            </div>
+            <div class="bg-green-100 p-4 rounded-lg">
+                <h3 class="text-lg font-semibold text-green-800">Well</h3>
+                <p class="text-2xl font-bold text-green-900">{{ total_well }}</p>
+            </div>
+            <div class="bg-red-100 p-4 rounded-lg">
+                <h3 class="text-lg font-semibold text-red-800">Unwell</h3>
+                <p class="text-2xl font-bold text-red-900">{{ total_unwell }}</p>
+            </div>
+        </div>
+
+        <!-- Filter Form -->
+        <form method="get" class="mb-6 bg-gray-50 p-4 rounded-lg">
+            <input type="hidden" name="submenu" value="{{ active_submenu }}">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                    <label for="nama_filter" class="block text-sm font-medium text-gray-700 mb-1">Nama</label>
+                    <input type="text" id="nama_filter" name="nama" value="{{ filters.nama }}"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="Cari berdasarkan nama...">
+                </div>
+                <div>
+                    <label for="jabatan_filter" class="block text-sm font-medium text-gray-700 mb-1">Jabatan</label>
+                    <select id="jabatan_filter" name="jabatan"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">Semua Jabatan</option>
+                        {% for jabatan in available_jabatan %}
+                        <option value="{{ jabatan }}" {% if filters.jabatan == jabatan %}selected{% endif %}>
+                            {{ jabatan }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="lokasi_filter" class="block text-sm font-medium text-gray-700 mb-1">Lokasi</label>
+                    <select id="lokasi_filter" name="lokasi"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">Semua Lokasi</option>
+                        {% for lokasi in available_lokasi %}
+                        <option value="{{ lokasi }}" {% if filters.lokasi == lokasi %}selected{% endif %}>
+                            {{ lokasi }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="status_filter" class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                    <select id="status_filter" name="status"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">Semua Status</option>
+                        {% for status in available_status %}
+                        <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>
+                            {{ status }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="mt-4 flex justify-end">
+                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                    Filter
+                </button>
+                {% if filters.nama or filters.jabatan or filters.lokasi or filters.status %}
+                <a href="?submenu={{ active_submenu }}" class="ml-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
+                    Reset
+                </a>
+                {% endif %}
+            </div>
+        </form>
+
+        <div class="overflow-x-auto">
+            <table class="min-w-full bg-white">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">UID</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nama</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Jabatan</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lokasi</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal Lahir</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Umur</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal Checkup</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tinggi</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Berat</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BMI</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lingkar Perut</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gula Darah Puasa</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gula Darah Sewaktu</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cholesterol</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Asam Urat</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tekanan Darah</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Derajat Kesehatan</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    {% for employee in employees %}
+                    <tr class="dashboard-row hover:bg-gray-50 cursor-pointer" data-url="{% url 'nurse:karyawan_detail' employee.uid %}?submenu=data_karyawan&subtab=profile" title="Klik baris untuk membuka profil">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ forloop.counter|add:start_index }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.uid }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.nama }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.jabatan }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.lokasi }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.tanggal_lahir|default:"-" }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.umur|default:"-" }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.tanggal_checkup|default:"-" }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.tinggi|default:"-" }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.berat|default:"-" }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.bmi|default:"-" }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.lingkar_perut|default:"-" }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.gula_darah_puasa|default:"-" }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.gula_darah_sewaktu|default:"-" }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.cholesterol|default:"-" }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.asam_urat|default:"-" }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.tekanan_darah|default:"-" }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.derajat_kesehatan|default:"-" }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            {% if employee.status == "Unwell" %}
+                                <span class="text-red-600 font-semibold">Unwell</span>
+                            {% elif employee.status == "Well" %}
+                                <span class="text-green-600 font-semibold">Well</span>
+                            {% else %}
+                                <span class="text-gray-400 italic">-</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            
+            <!-- Pagination Controls -->
+            {% if total_pages > 1 %}
+            <div class="flex justify-center items-center gap-2 mt-4">
+                {% if current_page > 1 %}
+                <a href="?submenu={{ active_submenu }}&page={{ current_page|add:'-1' }}{% if filters.nama %}&nama={{ filters.nama }}{% endif %}{% if filters.jabatan %}&jabatan={{ filters.jabatan }}{% endif %}{% if filters.lokasi %}&lokasi={{ filters.lokasi }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}" 
+                   class="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">
+                    Sebelumnya
+                </a>
+                {% endif %}
+                
+                <span class="px-3 py-1">
+                    Page {{ current_page }} of {{ total_pages }}
+                </span>
+                
+                {% if current_page < total_pages %}
+                <a href="?submenu={{ active_submenu }}&page={{ current_page|add:'1' }}{% if filters.nama %}&nama={{ filters.nama }}{% endif %}{% if filters.jabatan %}&jabatan={{ filters.jabatan }}{% endif %}{% if filters.lokasi %}&lokasi={{ filters.lokasi }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}" 
+                   class="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">
+                    Berikutnya
+                </a>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Grafik Content -->
+    <div id="grafik-content" class="{% if active_submenu != 'grafik' %}hidden{% endif %}">
+        <div class="flex flex-wrap items-center gap-3 mb-4">
+            <form method="get" class="flex flex-wrap items-center gap-2">
+                <input type="hidden" name="submenu" value="grafik" />
+                <label class="text-sm text-gray-700">Mode:</label>
+                <select name="grafik_mode" class="px-2 py-1 border rounded">
+                    <option value="month" {% if request.GET.grafik_mode|default:'month' == 'month' %}selected{% endif %}>Month</option>
+                    <option value="week" {% if request.GET.grafik_mode == 'week' %}selected{% endif %}>Week</option>
+                </select>
+                <div class="flex items-center gap-2">
+                    <label class="text-sm text-gray-700">Month:</label>
+                    <input type="month" name="grafik_month" value="{{ request.GET.grafik_month }}" class="px-2 py-1 border rounded" />
+                </div>
+                <div class="flex items-center gap-2">
+                    <label class="text-sm text-gray-700">Week:</label>
+                    <input type="week" name="grafik_week" value="{{ request.GET.grafik_week }}" class="px-2 py-1 border rounded" />
+                </div>
+                <button type="submit" class="px-3 py-1 bg-blue-600 text-white rounded">Apply</button>
+            </form>
+        </div>
+        <!-- Line visibility toggles -->
+        <div class="flex items-center gap-4 mb-2">
+            <label class="flex items-center gap-2 text-sm text-gray-700">
+                <input id="toggle-well" type="checkbox" class="rounded" checked>
+                Tampilkan Well
+            </label>
+            <label class="flex items-center gap-2 text-sm text-gray-700">
+                <input id="toggle-unwell" type="checkbox" class="rounded" checked>
+                Tampilkan Unwell
+            </label>
+        </div>
+        <div id="grafik-chart" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4">
+            {% if grafik_chart_html %}
+                {{ grafik_chart_html|safe }}
+            {% else %}
+                <p class="text-gray-600">No data available for the selected filters.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    // Row click navigation to employee profile (replicate manager behavior)
+    const rows = document.querySelectorAll('tr.dashboard-row[data-url]');
+    rows.forEach(row => {
+      row.addEventListener('click', function(e) {
+        // Avoid navigating when clicking interactive elements
+        const isInteractive = e.target.closest('a, button, input, select, textarea');
+        if (isInteractive) return;
+        const url = row.getAttribute('data-url');
+        if (url) {
+          window.location.href = url;
+        }
+      });
+    });
+
+    // Plotly line visibility toggles
+    const chartContainer = document.getElementById('grafik-chart');
+    const graphDiv = chartContainer ? chartContainer.querySelector('.js-plotly-plot') : null;
+    const toggleWell = document.getElementById('toggle-well');
+    const toggleUnwell = document.getElementById('toggle-unwell');
+    if (graphDiv && toggleWell && toggleUnwell && window.Plotly) {
+      const applyVisibility = () => {
+        // Trace indices: 0 = Well, 1 = Unwell
+        Plotly.restyle(graphDiv, { visible: toggleWell.checked ? true : 'legendonly' }, [0]);
+        Plotly.restyle(graphDiv, { visible: toggleUnwell.checked ? true : 'legendonly' }, [1]);
+      };
+      toggleWell.addEventListener('change', applyVisibility);
+      toggleUnwell.addEventListener('change', applyVisibility);
+      // Initialize based on default checked state
+      applyVisibility();
+    }
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,81 @@
+{% if karyawan %}
+<form method="POST" action="{% url 'manager:save_medical_checkup' karyawan.uid %}">
+    {% csrf_token %}
+    <div class="grid grid-cols-2 gap-4">
+
+        <div>
+            <label class="block font-semibold mb-1">Nama</label>
+            <input type="text" name="nama" value="{{ karyawan.nama }}" class="w-full border px-2 py-1 rounded" readonly>
+        </div>
+
+        <div>
+            <label class="block font-semibold mb-1">UID</label>
+            <input type="text" name="uid" value="{{ karyawan.uid }}" class="w-full border px-2 py-1 rounded" readonly>
+        </div>
+
+        <div>
+            <label class="block font-semibold mb-1">Tanggal Checkup</label>
+            <input type="date" name="tanggal_checkup" class="w-full border px-2 py-1 rounded">
+        </div>
+
+        <div>
+            <label class="block font-semibold mb-1">Tinggi (cm)</label>
+            <input type="number" name="tinggi" class="w-full border px-2 py-1 rounded">
+        </div>
+
+        <div>
+            <label class="block font-semibold mb-1">Berat (kg)</label>
+            <input type="number" name="berat" class="w-full border px-2 py-1 rounded">
+        </div>
+
+        <div>
+            <label class="block font-semibold mb-1">Lingkar Perut (cm)</label>
+            <input type="number" name="lingkar_perut" class="w-full border px-2 py-1 rounded">
+        </div>
+
+        <div>
+            <label class="block font-semibold mb-1">BMI</label>
+            <input type="number" step="0.1" name="bmi" class="w-full border px-2 py-1 rounded">
+        </div>
+
+        <div>
+            <label class="block font-semibold mb-1">Umur</label>
+            <input type="number" name="umur" class="w-full border px-2 py-1 rounded">
+        </div>
+
+        <div>
+            <label class="block font-semibold mb-1">Gula Darah Puasa</label>
+            <input type="number" name="gula_darah_puasa" class="w-full border px-2 py-1 rounded">
+        </div>
+
+        <div>
+            <label class="block font-semibold mb-1">Gula Darah Sewaktu</label>
+            <input type="number" name="gula_darah_sewaktu" class="w-full border px-2 py-1 rounded">
+        </div>
+
+        <div>
+            <label class="block font-semibold mb-1">Cholesterol</label>
+            <input type="number" name="cholesterol" class="w-full border px-2 py-1 rounded">
+        </div>
+
+        <div>
+            <label class="block font-semibold mb-1">Asam Urat</label>
+            <input type="number" name="asam_urat" class="w-full border px-2 py-1 rounded">
+        </div>
+
+        <div>
+            <label class="block font-semibold mb-1">Derajat Kesehatan</label>
+            <input type="text" name="derajat_kesehatan" class="w-full border px-2 py-1 rounded" placeholder="Misal: Baik / Sedang / Buruk">
+        </div>
+
+    </div>
+
+    <div class="mt-4">
+        <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+            Simpan Checkup
+        </button>
+    </div>
+</form>
+{% else %}
+<p class="text-gray-500">Pilih karyawan untuk mengedit data.</p>
+{% endif %}
