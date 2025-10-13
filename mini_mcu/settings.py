@@ -134,13 +134,13 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LOGIN_URL = "accounts:login"
 LOGIN_REDIRECT_URL = "/manager/"   # or "/nurse/" depending on role
 LOGOUT_REDIRECT_URL = "/"
- 
- # Production security hardening (only when not DEBUG)
- if not DEBUG:
-     SECURE_SSL_REDIRECT = True
-     SESSION_COOKIE_SECURE = True
-     CSRF_COOKIE_SECURE = True
-     # Optional HSTS controlled via environment, defaults off for flexibility
-     SECURE_HSTS_SECONDS = int(os.getenv("DJANGO_HSTS_SECONDS", "0"))
-     SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv("DJANGO_HSTS_INCLUDE_SUBDOMAINS", "False").lower() == "true"
-     SECURE_HSTS_PRELOAD = os.getenv("DJANGO_HSTS_PRELOAD", "False").lower() == "true"
+
+# Production security hardening (only when not DEBUG)
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    # Optional HSTS controlled via environment, defaults off for flexibility
+    SECURE_HSTS_SECONDS = int(os.getenv("DJANGO_HSTS_SECONDS", "0"))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv("DJANGO_HSTS_INCLUDE_SUBDOMAINS", "False").lower() == "true"
+    SECURE_HSTS_PRELOAD = os.getenv("DJANGO_HSTS_PRELOAD", "False").lower() == "true"
