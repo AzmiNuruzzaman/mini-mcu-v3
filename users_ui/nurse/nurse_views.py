@@ -180,12 +180,14 @@ def nurse_index(request):
         pivot = daily.pivot_table(index='date', columns='status', values='count', fill_value=0)
         pivot = pivot.rename(columns={'Well': 'well', 'Unwell': 'unwell'})
         pivot = pivot.sort_index()
+        # Ensure both expected status columns exist as Series to avoid scalar fallbacks
+        pivot = pivot.reindex(columns=['well', 'unwell'], fill_value=0)
 
         # Build Plotly figure
         if not pivot.empty:
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=pivot.index, y=pivot.get('well', 0), mode='lines+markers', name='Well', line=dict(color='green')))
-            fig.add_trace(go.Scatter(x=pivot.index, y=pivot.get('unwell', 0), mode='lines+markers', name='Unwell', line=dict(color='red')))
+            fig.add_trace(go.Scatter(x=pivot.index, y=pivot['well'], mode='lines+markers', name='Well', line=dict(color='green')))
+            fig.add_trace(go.Scatter(x=pivot.index, y=pivot['unwell'], mode='lines+markers', name='Unwell', line=dict(color='red')))
             fig.update_layout(
                 title='Well vs Unwell Over Time',
                 xaxis_title='Tanggal',
