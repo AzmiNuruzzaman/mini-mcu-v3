@@ -11,6 +11,9 @@
   DJANGO_MEDIA_ROOT = "/data/media"
   DJANGO_MEDIA_URL = "/media/"
   APP_BASE_URL = ""
+  DATABASE_URL = "postgresql://postgres:wvKawPcFgmxdCEspUoXRgRXlgVeaKzhB@shinkansen.proxy.rlwy.net:24290/railway"
+  DJANGO_SECRET_KEY = "j-cca4av+sp+34+%)ttx1gs3uh)2%!maws4vf+jw=6b#%aj@-t"
+
 
 [start]
   cmd = "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn mini_mcu.wsgi:application --bind 0.0.0.0:$PORT --workers 3"
