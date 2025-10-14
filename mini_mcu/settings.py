@@ -12,7 +12,18 @@ APP_BASE_URL = os.getenv("APP_BASE_URL")
 SERVE_MEDIA = os.getenv("DJANGO_SERVE_MEDIA", "False").lower() == "true"
 
 ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "*").split(",")
-CSRF_TRUSTED_ORIGINS = os.getenv("CSRF_TRUSTED_ORIGINS", "https://*.railway.app").split(",")
+# Include Render by default for CSRF; can be overridden via env
+CSRF_TRUSTED_ORIGINS = os.getenv(
+    "CSRF_TRUSTED_ORIGINS",
+    "https://*.railway.app,https://*.onrender.com,https://*"
+).split(",")
+
+# If deploying on Render, automatically allow the Render external host
+RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
+if RENDER_EXTERNAL_URL:
+    _host = RENDER_EXTERNAL_URL.replace("https://", "").replace("http://", "")
+    if _host and _host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_host)
 USE_X_FORWARDED_HOST = True
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
