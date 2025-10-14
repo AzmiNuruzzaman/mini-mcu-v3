@@ -14,13 +14,11 @@ This project uses Django with unmanaged models (`managed=False`). The app expect
 - Use `DATABASE_PUBLIC_URL` for local import/export and PG clients: append `?sslmode=require`.
 
 ## Railway Start Command
-Railway runs the following on start (see `railway.toml`):
+Railway uses `Procfile` for the start command:
 ```
-python manage.py migrate --noinput && \
-python manage.py collectstatic --noinput && \
-gunicorn mini_mcu.wsgi:application --bind 0.0.0.0:$PORT --workers 3
+web: python manage.py collectstatic --noinput && gunicorn mini_mcu.wsgi:application --bind 0.0.0.0:$PORT --workers 3
 ```
-Note: With `managed=False` models and no migrations, `migrate` is a no-op.
+Note: With `managed=False` models and no migrations, `migrate` is a no-op and not required here.
 
 ## Tables Required (schema `public`)
 Create or restore these tables with exact lowercase names:

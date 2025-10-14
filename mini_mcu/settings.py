@@ -15,7 +15,7 @@ ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "*").split(",")
 # Include Render by default for CSRF; can be overridden via env
 CSRF_TRUSTED_ORIGINS = os.getenv(
     "CSRF_TRUSTED_ORIGINS",
-    "https://*.railway.app,https://*.onrender.com,https://*"
+    "https://*.railway.app,https://*.onrender.com"
 ).split(",")
 
 # If deploying on Render, automatically allow the Render external host
@@ -81,7 +81,7 @@ TEMPLATES = [
 WSGI_APPLICATION = "mini_mcu.wsgi.application"
 
 # -----------------------------
-# Database (Local PostgreSQL via ORM / Railway)
+# Database (Local PostgreSQL / Hosted)
 # -----------------------------
 local_db = {
     "ENGINE": "django.db.backends.postgresql",
@@ -93,16 +93,23 @@ local_db = {
     "OPTIONS": {"options": "-c search_path=public"},
 }
 
-db_url = os.getenv("DATABASE_PUBLIC_URL")  # 👈 use public Railway DB
+db_url = os.getenv("DATABASE_URL") or os.getenv("DATABASE_PUBLIC_URL")
 
 if os.getenv("DJANGO_USE_LOCAL_DB", "False").lower() == "true":
     DATABASES = {"default": local_db}
 elif db_url:
+    # Toggle SSL requirement based on host: public proxy needs SSL, internal may not
+    ssl_req = True
+    try:
+        if "railway.internal" in db_url:
+            ssl_req = False
+    except Exception:
+        ssl_req = True
     DATABASES = {
         "default": dj_database_url.parse(
             db_url,
             conn_max_age=600,
-            ssl_require=True
+            ssl_require=ssl_req
         )
     }
     # Ensure public schema
