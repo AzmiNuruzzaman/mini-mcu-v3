@@ -82,12 +82,14 @@ local_db = {
     "OPTIONS": {"options": "-c search_path=public"},
 }
 
+db_url = os.getenv("DATABASE_PUBLIC_URL")  # 👈 use public Railway DB
+
 if os.getenv("DJANGO_USE_LOCAL_DB", "False").lower() == "true":
     DATABASES = {"default": local_db}
-elif os.getenv("DATABASE_URL"):
+elif db_url:
     DATABASES = {
         "default": dj_database_url.parse(
-            os.environ["DATABASE_URL"],
+            db_url,
             conn_max_age=600,
             ssl_require=True
         )
@@ -96,7 +98,6 @@ elif os.getenv("DATABASE_URL"):
     DATABASES["default"]["OPTIONS"] = DATABASES["default"].get("OPTIONS", {})
     DATABASES["default"]["OPTIONS"]["options"] = "-c search_path=public"
 else:
-    # fallback to local_db
     DATABASES = {"default": local_db}
 
 
