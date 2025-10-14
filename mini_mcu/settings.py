@@ -86,11 +86,16 @@ if os.getenv("DJANGO_USE_LOCAL_DB", "False").lower() == "true":
     DATABASES = {"default": local_db}
 elif os.getenv("DATABASE_URL"):
     DATABASES = {
-        "default": dj_database_url.config(conn_max_age=600, ssl_require=True)
+        "default": dj_database_url.parse(
+            os.environ["DATABASE_URL"],
+            conn_max_age=600,
+            ssl_require=True
+        )
     }
-    # Ensure Railway/Postgres uses public schema
+    # Ensure public schema
     DATABASES["default"]["OPTIONS"] = DATABASES["default"].get("OPTIONS", {})
     DATABASES["default"]["OPTIONS"]["options"] = "-c search_path=public"
+
 else:
     # fallback to local_db
     DATABASES = {"default": local_db}
