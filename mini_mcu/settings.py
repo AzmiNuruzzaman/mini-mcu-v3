@@ -70,7 +70,7 @@ TEMPLATES = [
 WSGI_APPLICATION = "mini_mcu.wsgi.application"
 
 # -----------------------------
-# Database (Local PostgreSQL via ORM)
+# Database (Local PostgreSQL via ORM / Railway)
 # -----------------------------
 local_db = {
     "ENGINE": "django.db.backends.postgresql",
@@ -95,10 +95,10 @@ elif os.getenv("DATABASE_URL"):
     # Ensure public schema
     DATABASES["default"]["OPTIONS"] = DATABASES["default"].get("OPTIONS", {})
     DATABASES["default"]["OPTIONS"]["options"] = "-c search_path=public"
-
 else:
     # fallback to local_db
     DATABASES = {"default": local_db}
+
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "Asia/Jakarta"
