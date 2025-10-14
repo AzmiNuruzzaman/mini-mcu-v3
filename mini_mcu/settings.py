@@ -79,20 +79,20 @@ local_db = {
     "PASSWORD": "1,588@ASDf",
     "HOST": "localhost",
     "PORT": "5432",
+    "OPTIONS": {"options": "-c search_path=public"},
 }
-LOCAL_SQLITE_DB = {
-    "ENGINE": "django.db.backends.sqlite3",
-    "NAME": BASE_DIR / "db.sqlite3",
-}
-if os.getenv("DJANGO_USE_SQLITE", "False").lower() == "true":
-    DATABASES = {"default": LOCAL_SQLITE_DB}
-elif os.getenv("DJANGO_USE_LOCAL_DB", "False").lower() == "true":
+
+if os.getenv("DJANGO_USE_LOCAL_DB", "False").lower() == "true":
     DATABASES = {"default": local_db}
 elif os.getenv("DATABASE_URL"):
     DATABASES = {
         "default": dj_database_url.config(conn_max_age=600, ssl_require=True)
     }
+    # Ensure Railway/Postgres uses public schema
+    DATABASES["default"]["OPTIONS"] = DATABASES["default"].get("OPTIONS", {})
+    DATABASES["default"]["OPTIONS"]["options"] = "-c search_path=public"
 else:
+    # fallback to local_db
     DATABASES = {"default": local_db}
 
 LANGUAGE_CODE = "en-us"
