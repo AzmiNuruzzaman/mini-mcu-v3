@@ -49,6 +49,7 @@ urlpatterns = [
     # TAB 5: HAPUS DATA KARYAWAN (was Data Management)
     # ===============================
     path("manage-uid/", manager_views.manage_karyawan_uid, name="hapus_data_karyawan"),
+    path("reset-all-checkups/", manager_views.reset_all_checkups, name="reset_all_checkups"),
     path("reset-all-karyawan/", manager_views.reset_all_karyawan, name="reset_all_karyawan"),
     path("manage-lokasi/", manager_views.manage_lokasi, name="manage_lokasi"),
     path("delete-karyawan/<str:uid>/", manager_views.delete_karyawan, name="delete_karyawan"),

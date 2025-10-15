@@ -995,6 +995,30 @@ def reset_all_karyawan(request):
     return redirect(reverse("manager:hapus_data_karyawan"))
 
 # -------------------------
+# Tab 5d: Reset All Checkups
+# -------------------------
+@require_http_methods(["POST"]) 
+def reset_all_checkups(request):
+    """Delete all medical checkup records safely."""
+    from core.queries import delete_all_checkups
+
+    # Accept either custom session auth (Manager) or Django auth for staff/superuser
+    session_auth = request.session.get("authenticated")
+    session_role = request.session.get("user_role")
+    user_ok = hasattr(request, "user") and getattr(request.user, "is_authenticated", False) and (getattr(request.user, "is_staff", False) or getattr(request.user, "is_superuser", False))
+    if not ((session_auth and session_role == "Manager") or user_ok):
+        return redirect("accounts:login")
+
+    try:
+        delete_all_checkups()
+        request.session['success_message'] = "Semua data checkup berhasil dihapus."
+    except Exception as e:
+        request.session['error_message'] = f"Gagal menghapus semua data checkup: {e}"
+
+    # Stay on the Data Management page and switch to the new checkup subtab
+    return redirect(reverse("manager:hapus_data_karyawan") + "?subtab=checkup")
+
+# -------------------------
 # Tab 6: Manage Lokasi
 # -------------------------
 def manage_lokasi(request):
