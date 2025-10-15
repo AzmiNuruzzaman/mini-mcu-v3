@@ -101,6 +101,52 @@
                 <td class="border px-4 py-2">{{ employee.lokasi }}</td>
               </tr>
               <tr>
+                <td class="border px-4 py-2">Tanggal Lahir</td>
+                <td class="border px-4 py-2">
+                  {% if latest_checkup and latest_checkup.tanggal_lahir %}
+                    {{ latest_checkup.tanggal_lahir }}
+                  {% elif employee.tanggal_lahir %}
+                    {{ employee.tanggal_lahir }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+              </tr>
+              <tr>
+                <td class="border px-4 py-2">Umur</td>
+                <td class="border px-4 py-2">
+                  {% if latest_checkup and latest_checkup.umur %}
+                    {{ latest_checkup.umur }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+              </tr>
+              <tr>
+                <td class="border px-4 py-2">Derajat Kesehatan</td>
+                <td class="border px-4 py-2">
+                  {% if latest_checkup %}
+                    {% with dk=latest_checkup.derajat_kesehatan|default:""|upper %}
+                      {% if dk == "P1" or dk == "P2" or dk == "P3" %}
+                        <span class="text-green-600 font-semibold">{{ dk }}</span>
+                      {% elif dk == "P4" %}
+                        <span class="text-yellow-600 font-semibold">{{ dk }}</span>
+                      {% elif dk == "P5" %}
+                        <span class="text-orange-600 font-semibold">{{ dk }}</span>
+                      {% elif dk == "P6" or dk == "P7" %}
+                        <span class="text-red-600 font-semibold">{{ dk }}</span>
+                      {% elif dk %}
+                        <span class="text-gray-700 font-semibold">{{ dk }}</span>
+                      {% else %}
+                        <span class="text-gray-400 italic">-</span>
+                      {% endif %}
+                    {% endwith %}
+                  {% else %}
+                    <span class="text-gray-400 italic">-</span>
+                  {% endif %}
+                </td>
+              </tr>
+              <tr>
                 <td class="border px-4 py-2">Kontak Darurat</td>
                 <td class="border px-4 py-2">
                   {% if not view_only %}
@@ -169,6 +215,26 @@
               <tr>
                 <td class="border px-4 py-2">Asam Urat</td>
                 <td class="border px-4 py-2 {% if latest_checkup.flags and latest_checkup.flags.asam_high %}text-red-600 font-semibold{% endif %}">{{ latest_checkup.asam_urat|default:"-" }}</td>
+              </tr>
+              <tr>
+                <td class="border px-4 py-2">Derajat Kesehatan</td>
+                <td class="border px-4 py-2">
+                  {% with dk=latest_checkup.derajat_kesehatan|default:""|upper %}
+                    {% if dk == "P1" or dk == "P2" or dk == "P3" %}
+                      <span class="text-green-600 font-semibold">{{ dk }}</span>
+                    {% elif dk == "P4" %}
+                      <span class="text-yellow-600 font-semibold">{{ dk }}</span>
+                    {% elif dk == "P5" %}
+                      <span class="text-orange-600 font-semibold">{{ dk }}</span>
+                    {% elif dk == "P6" or dk == "P7" %}
+                      <span class="text-red-600 font-semibold">{{ dk }}</span>
+                    {% elif dk %}
+                      <span class="text-gray-700 font-semibold">{{ dk }}</span>
+                    {% else %}
+                      <span class="text-gray-400 italic">-</span>
+                    {% endif %}
+                  {% endwith %}
+                </td>
               </tr>
               <tr>
                 <td class="border px-4 py-2">Berat (kg)</td>
