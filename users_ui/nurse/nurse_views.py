@@ -509,12 +509,99 @@ def nurse_karyawan_detail(request, uid):
     except Exception:
         history_checkups = []
 
+    # Build dashboard-like history records (similar to manager's history_dashboard)
+    history_dashboard = []
+    try:
+        if checkups is not None and not checkups.empty:
+            df_hist2 = checkups.copy()
+            # Normalize uid column if needed
+            if 'uid_id' in df_hist2.columns and 'uid' not in df_hist2.columns:
+                df_hist2 = df_hist2.rename(columns={'uid_id': 'uid'})
+            # Ensure tanggal_checkup is datetime for sorting/formatting
+            if 'tanggal_checkup' in df_hist2.columns:
+                df_hist2['tanggal_checkup'] = pd.to_datetime(df_hist2['tanggal_checkup'], errors='coerce')
+            df_hist2 = df_hist2.sort_values('tanggal_checkup', ascending=False)
+
+            # Employee info fallbacks
+            emp_nama = (employee_clean or {}).get('nama')
+            emp_jabatan = (employee_clean or {}).get('jabatan')
+            emp_lokasi = (employee_clean or {}).get('lokasi')
+            emp_tanggal_lahir = None
+            try:
+                tl_raw = (employee_clean or {}).get('tanggal_lahir')
+                tl_dt = pd.to_datetime(tl_raw, errors='coerce')
+                emp_tanggal_lahir = tl_dt.strftime('%d/%m/%y') if pd.notna(tl_dt) else None
+            except Exception:
+                emp_tanggal_lahir = None
+
+            from core.helpers import compute_status as _compute_status
+            for _, row in df_hist2.iterrows():
+                # Numeric coercion
+                tinggi_n = pd.to_numeric(row.get('tinggi', None), errors='coerce')
+                berat_n = pd.to_numeric(row.get('berat', None), errors='coerce')
+                bmi_n = pd.to_numeric(row.get('bmi', None), errors='coerce')
+                lp_n = pd.to_numeric(row.get('lingkar_perut', None), errors='coerce')
+                gdp_n = pd.to_numeric(row.get('gula_darah_puasa', None), errors='coerce')
+                gds_n = pd.to_numeric(row.get('gula_darah_sewaktu', None), errors='coerce')
+                chol_n = pd.to_numeric(row.get('cholesterol', None), errors='coerce')
+                asam_n = pd.to_numeric(row.get('asam_urat', None), errors='coerce')
+
+                # Age: prefer row['umur'], else compute from birthdate and checkup date
+                umur_val = row.get('umur', None)
+                try:
+                    if pd.isna(umur_val):
+                        tl_dt = pd.to_datetime((employee_clean or {}).get('tanggal_lahir'), errors='coerce')
+                        tc_dt = pd.to_datetime(row.get('tanggal_checkup'), errors='coerce')
+                        if pd.notna(tl_dt) and pd.notna(tc_dt):
+                            umur_val = int((tc_dt.date() - tl_dt.date()).days // 365)
+                except Exception:
+                    pass
+
+                # Date formatting
+                tc_dt = pd.to_datetime(row.get('tanggal_checkup'), errors='coerce')
+                tanggal_str = tc_dt.strftime('%d/%m/%y') if pd.notna(tc_dt) else None
+
+                # Status based on thresholds
+                status_val = _compute_status({
+                    'gula_darah_puasa': gdp_n if pd.notna(gdp_n) else 0,
+                    'gula_darah_sewaktu': gds_n if pd.notna(gds_n) else 0,
+                    'cholesterol': chol_n if pd.notna(chol_n) else 0,
+                    'asam_urat': asam_n if pd.notna(asam_n) else 0,
+                    'bmi': bmi_n if pd.notna(bmi_n) else 0,
+                })
+
+                history_dashboard.append({
+                    'uid': str(row.get('uid', uid)),
+                    'nama': emp_nama,
+                    'jabatan': emp_jabatan,
+                    'lokasi': emp_lokasi,
+                    'tanggal_lahir': emp_tanggal_lahir,
+                    'umur': int(umur_val) if pd.notna(pd.to_numeric(umur_val, errors='coerce')) else None,
+                    'tanggal_checkup': tanggal_str,
+                    'tinggi': float(tinggi_n) if pd.notna(tinggi_n) else None,
+                    'berat': float(berat_n) if pd.notna(berat_n) else None,
+                    'bmi': float(bmi_n) if pd.notna(bmi_n) else None,
+                    'lingkar_perut': float(lp_n) if pd.notna(lp_n) else None,
+                    'gula_darah_puasa': float(gdp_n) if pd.notna(gdp_n) else None,
+                    'gula_darah_sewaktu': float(gds_n) if pd.notna(gds_n) else None,
+                    'cholesterol': float(chol_n) if pd.notna(chol_n) else None,
+                    'asam_urat': float(asam_n) if pd.notna(asam_n) else None,
+                    'tekanan_darah': row.get('tekanan_darah', None),
+                    'derajat_kesehatan': str(row.get('derajat_kesehatan')) if row.get('derajat_kesehatan') is not None else None,
+                    'tanggal_MCU': None,
+                    'expired_MCU': None,
+                    'status': status_val,
+                })
+    except Exception:
+        history_dashboard = []
+
     return render(request, "nurse/edit_karyawan.html", {
         "employee": employee_clean or {},
         "employees": employees,
         "checkups": checkups,
         "latest_checkup": latest_checkup,
         "history_checkups": history_checkups,
+        "history_dashboard": history_dashboard,
         "active_submenu": active_submenu,
         "active_subtab": active_subtab,
         "active_menu_label": "Edit Karyawan",

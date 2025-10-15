@@ -72,7 +72,7 @@
 <body class="bg-gray-100">
     <div class="flex h-screen">
         <!-- Sidebar -->
-        <div class="w-[310px] bg-primary flex-shrink-0">
+        <div id="app-sidebar" class="w-[310px] bg-primary flex-shrink-0 transition-all duration-200">
             {% block sidebar %}
                 {% include "shared/shared_sidebar.html" %}
             {% endblock %}
@@ -83,9 +83,16 @@
             <div class="h-full flex flex-col">
                 <!-- Header -->
                 <header class="bg-white border-b border-gray-200 px-8 py-4 flex justify-between items-center">
-                    <div>
-                        <h1 class="text-2xl font-bold text-gray-800">{% if role_title %}{{ role_title|upper }}{% elif view_only %}KARYAWAN{% else %}MANAGER{% endif %}</h1>
-                        <div class="h-1 w-12 bg-primary mt-2"></div>
+                    <div class="flex items-center gap-3">
+                        <button id="sidebarToggle" type="button" aria-label="Toggle sidebar"
+                                class="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary">
+                            <i class="fas fa-bars"></i>
+                            <span class="hidden sm:inline">Menu</span>
+                        </button>
+                        <div>
+                            <h1 class="text-2xl font-bold text-gray-800">{% if role_title %}{{ role_title|upper }}{% elif view_only %}KARYAWAN{% else %}MANAGER{% endif %}</h1>
+                            <div class="h-1 w-12 bg-primary mt-2"></div>
+                        </div>
                     </div>
                     <img src="{% static 'images/logo.png' %}" alt="Logo" class="h-24">
                 </header>
@@ -111,6 +118,36 @@
                 });
             });
         });
+    </script>
+    <script>
+        (function(){
+            var sidebar = document.getElementById('app-sidebar');
+            var btn = document.getElementById('sidebarToggle');
+
+            function setHidden(hidden){
+                if (!sidebar) return;
+                if (hidden) {
+                    sidebar.classList.add('hidden');
+                    try { localStorage.setItem('sidebarHidden','true'); } catch(e) {}
+                } else {
+                    sidebar.classList.remove('hidden');
+                    try { localStorage.setItem('sidebarHidden','false'); } catch(e) {}
+                }
+            }
+
+            var saved = null;
+            try { saved = localStorage.getItem('sidebarHidden'); } catch(e) {}
+            var isMobile = window.matchMedia('(max-width: 767px)').matches;
+            var initialHidden = (saved === 'true') || isMobile;
+            setHidden(initialHidden);
+
+            if (btn) {
+                btn.addEventListener('click', function(){
+                    var nowHidden = sidebar && sidebar.classList.contains('hidden');
+                    setHidden(!nowHidden);
+                });
+            }
+        })();
     </script>
 </body>
 </html>
