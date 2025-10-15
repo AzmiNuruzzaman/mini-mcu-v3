@@ -30,6 +30,16 @@
 
   <!-- Panel content area -->
   <div class="px-4 py-4">
+    <!-- Messages -->
+    {% if request.session.success_message %}
+      <div class="mb-4 p-3 rounded bg-green-100 text-green-800 border border-green-300">{{ request.session.success_message }}</div>
+    {% endif %}
+    {% if request.session.error_message %}
+      <div class="mb-4 p-3 rounded bg-red-100 text-red-800 border border-red-300">{{ request.session.error_message }}</div>
+    {% endif %}
+    {% if request.session.warning_message %}
+      <div class="mb-4 p-3 rounded bg-yellow-100 text-yellow-800 border border-yellow-300">{{ request.session.warning_message }}</div>
+    {% endif %}
     {% with is_active=request.GET.submenu|default:'upload_master' %}
       {% if is_active == 'upload_master' %}
         <!-- Upload Master Karyawan -->
@@ -77,7 +87,7 @@
           <h3 class="text-lg font-semibold mb-4">Export Data</h3>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="bg-gray-50 p-6 rounded-lg">
-              <div class="text-xs text-gray-600 mb-2">download semua data karyawan</div>
+              <div class="text-xs text-gray-600 mb-2">download semua data checkup</div>
               <a href="{% url 'manager:export_checkup_data' %}" class="inline-block bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
                 Export All Checkup Data
               </a>

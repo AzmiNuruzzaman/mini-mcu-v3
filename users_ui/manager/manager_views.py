@@ -45,7 +45,7 @@ from core.helpers import (
 import plotly.graph_objects as go
 import plotly.io as pio
 from core import excel_parser, checkup_uploader
-from utils.export_utils import generate_karyawan_template_excel, export_checkup_data_excel
+from utils.export_utils import generate_karyawan_template_excel, export_checkup_data_excel as build_checkup_excel
 from users_ui.qr.qr_views import qr_detail_view, qr_bulk_download_view
 
 # -------------------------
@@ -1350,18 +1350,32 @@ def save_medical_checkup(request, uid):
 
     return redirect(reverse("manager:edit_karyawan", kwargs={"uid": uid}) + "?submenu=data_karyawan&subtab=profile")
 
+@require_http_methods(["GET"]) 
 def export_checkup_data_excel(request):
+    # Auth guard for Manager
+    if not request.session.get("authenticated") or request.session.get("user_role") != "Manager":
+        return redirect("accounts:login")
+
     try:
-        excel_file = export_checkup_data_excel()
+        # Load all checkups
+        df = load_checkups()
+
+        # If no data, show warning and redirect to Export tab
+        if df is None or df.empty:
+            request.session["warning_message"] = "belum ada check up data, silahkan unggah terlebih dahulu"
+            return redirect(reverse("manager:upload_export") + "?submenu=export_data")
+
+        # Build Excel bytes
+        excel_bytes = build_checkup_excel(df)
         response = HttpResponse(
-            excel_file,
+            excel_bytes,
             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-        response['Content-Disposition'] = 'attachment; filename="medical_checkup_data.xlsx"'
+        response["Content-Disposition"] = 'attachment; filename="medical_checkup_data.xlsx"'
         return response
     except Exception as e:
-        request.session['error_message'] = f"Failed to export data: {e}"
-        return redirect(reverse("manager:dashboard"))
+        request.session["error_message"] = f"Failed to export data: {e}"
+        return redirect(reverse("manager:upload_export") + "?submenu=export_data")
 
 
 
@@ -1406,7 +1420,7 @@ from core.helpers import (
     get_active_menu_for_view,
 )
 from core import excel_parser, checkup_uploader
-from utils.export_utils import generate_karyawan_template_excel, export_checkup_data_excel
+from utils.export_utils import generate_karyawan_template_excel, export_checkup_data_excel as build_checkup_excel
 from users_ui.qr.qr_views import qr_detail_view, qr_bulk_download_view
 
 # -------------------------
