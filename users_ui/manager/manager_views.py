@@ -1191,6 +1191,14 @@ def employee_profile(request, uid):
                     latest_disp["tanggal_checkup"] = dt.strftime("%d/%m/%y")
             except Exception:
                 pass
+            # Ensure derajat_kesehatan is present for template display
+            try:
+                dk_raw = latest_row.get('derajat_kesehatan', None)
+                if dk_raw is not None:
+                    latest_disp['derajat_kesehatan'] = str(dk_raw)
+            except Exception:
+                # If any issue occurs, leave it unset and template will show '-'
+                pass
             latest_disp["status"] = status
             latest_disp["flags"] = flags
             latest_checkup = latest_disp
