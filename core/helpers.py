@@ -110,7 +110,7 @@ def get_dashboard_checkup_data() -> pd.DataFrame:
         empty_medical_cols = [
             'tanggal_checkup', 'tinggi', 'berat', 'bmi', 'lingkar_perut',
             'gula_darah_puasa', 'gula_darah_sewaktu', 'cholesterol', 'asam_urat',
-            'tekanan_darah', 'derajat_kesehatan', 'umur', 'status'
+            'tekanan_darah', 'derajat_kesehatan', 'umur', 'status', 'tanggal_MCU', 'expired_MCU'
         ]
         for col in empty_medical_cols:
             if col not in df_combined.columns:
@@ -130,12 +130,17 @@ def get_dashboard_checkup_data() -> pd.DataFrame:
         df_combined['bulan'] = 0
         df_combined['tahun'] = 0
 
+    # Ensure placeholder columns for MCU display exist
+    for col in ['tanggal_MCU', 'expired_MCU']:
+        if col not in df_combined.columns:
+            df_combined[col] = None
+
     # Reorder columns for clean dashboard display
     preferred_order = [
         'uid', 'nama', 'jabatan', 'lokasi', 'tanggal_lahir', 'umur',
         'tanggal_checkup', 'tinggi', 'berat', 'bmi', 'lingkar_perut',
         'gula_darah_puasa', 'gula_darah_sewaktu', 'cholesterol', 'asam_urat',
-        'tekanan_darah', 'derajat_kesehatan', 'status', 'bulan', 'tahun'
+        'tekanan_darah', 'derajat_kesehatan', 'tanggal_MCU', 'expired_MCU', 'status', 'bulan', 'tahun'
     ]
     
     # Ensure all columns exist before reordering

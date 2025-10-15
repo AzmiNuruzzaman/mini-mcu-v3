@@ -117,6 +117,20 @@
             </tbody>
           </table>
         </div>
+        <!-- MCU Box: Placeholder for Tanggal MCU and Expired MCU -->
+        <div class="mt-6 p-4 bg-white shadow rounded">
+          <h3 class="text-lg font-semibold mb-3">MCU</h3>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="border px-4 py-2 rounded">
+              <div class="text-sm text-gray-600">Tanggal MCU</div>
+              <div class="font-medium">{{ latest_checkup.tanggal_checkup|default:"-" }}</div>
+            </div>
+            <div class="border px-4 py-2 rounded">
+              <div class="text-sm text-gray-600">Expired MCU</div>
+              <div class="font-medium">-</div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- 3. Latest Medical Checkup (DataFrame-style) -->

@@ -115,6 +115,8 @@
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Asam Urat</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tekanan Darah</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Derajat Kesehatan</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal MCU</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Expired MCU</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                     </tr>
                 </thead>
@@ -139,6 +141,8 @@
                         <td class="px-6 py-4 whitespace-nowrap">{{ employee.asam_urat|default:"-" }}</td>
                         <td class="px-6 py-4 whitespace-nowrap">{{ employee.tekanan_darah|default:"-" }}</td>
                         <td class="px-6 py-4 whitespace-nowrap">{{ employee.derajat_kesehatan|default:"-" }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.tanggal_MCU|default:"-" }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.expired_MCU|default:"-" }}</td>
                         <td class="px-6 py-4 whitespace-nowrap">
                             {% if employee.status == "Unwell" %}
                                 <span class="text-red-600 font-semibold">Unwell</span>
