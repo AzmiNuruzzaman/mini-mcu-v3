@@ -1304,14 +1304,38 @@ def save_medical_checkup(request, uid):
         except Exception:
             bmi = None
 
+        # Determine checkup date
+        tanggal_checkup_date = pd.to_datetime(tanggal_checkup).date() if tanggal_checkup else datetime.today().date()
+
+        # Auto-calculate umur if not provided, using employee birthdate
+        umur_value = None
+        if umur:
+            try:
+                umur_value = int(umur)
+            except Exception:
+                umur_value = None
+        else:
+            try:
+                from core.queries import get_employee_by_uid
+                emp = get_employee_by_uid(uid)
+                birth_raw = emp.get("tanggal_lahir") if isinstance(emp, dict) else getattr(emp, "tanggal_lahir", None)
+                birth_dt = pd.to_datetime(birth_raw, errors="coerce") if birth_raw else None
+                birth_date = birth_dt.date() if pd.notna(birth_dt) else None
+                if birth_date and tanggal_checkup_date:
+                    umur_value = tanggal_checkup_date.year - birth_date.year - (
+                        (tanggal_checkup_date.month, tanggal_checkup_date.day) < (birth_date.month, birth_date.day)
+                    )
+            except Exception:
+                umur_value = None
+
         record = {
             "uid": uid,
-            "tanggal_checkup": pd.to_datetime(tanggal_checkup).date() if tanggal_checkup else datetime.today().date(),
+            "tanggal_checkup": tanggal_checkup_date,
             "tinggi": float(tinggi) if tinggi else None,
             "berat": float(berat) if berat else None,
             "lingkar_perut": float(lingkar_perut) if lingkar_perut else None,
             "bmi": float(bmi) if bmi is not None else None,
-            "umur": int(umur) if umur else None,
+            "umur": umur_value,
             "gula_darah_puasa": float(gula_darah_puasa) if gula_darah_puasa else None,
             "gula_darah_sewaktu": float(gula_darah_sewaktu) if gula_darah_sewaktu else None,
             "cholesterol": float(cholesterol) if cholesterol else None,
