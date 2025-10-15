@@ -84,7 +84,7 @@
                 <!-- Header -->
                 <header class="bg-white border-b border-gray-200 px-8 py-4 flex justify-between items-center">
                     <div class="flex items-center gap-3">
-                        <button id="sidebarToggle" type="button" aria-label="Toggle sidebar" onclick="window.toggleSidebar && window.toggleSidebar()"
+                        <button id="sidebarToggle" type="button" aria-label="Toggle sidebar"
                                 class="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary">
                             <i class="fas fa-bars"></i>
                             <span class="hidden sm:inline">Menu</span>
@@ -108,50 +108,69 @@
     {% block extra_scripts %}{% endblock %}
     
     <script>
-        $(document).ready(function() {
-            // Initialize all Select2 elements
-            $('.select2').each(function() {
-                $(this).select2({
-                    placeholder: "Ketik nama karyawan...",
-                    allowClear: true,
-                    width: '100%'
-                });
-            });
-        });
+        (function(){
+            try {
+                if (window.$ && $.fn && typeof $.fn.select2 === 'function') {
+                    $(document).ready(function() {
+                        // Initialize all Select2 elements if jQuery + Select2 are available
+                        $('.select2').each(function() {
+                            $(this).select2({
+                                placeholder: "Ketik nama karyawan...",
+                                allowClear: true,
+                                width: '100%'
+                            });
+                        });
+                    });
+                }
+            } catch (e) {
+                // Silently ignore to avoid breaking other scripts (e.g., sidebar toggle)
+            }
+        })();
     </script>
     <script>
         (function(){
             var sidebar = document.getElementById('app-sidebar');
             var btn = document.getElementById('sidebarToggle');
 
-            function setHidden(hidden){
-                if (!sidebar) return;
-                if (hidden) {
-                    sidebar.classList.add('hidden');
-                    try { localStorage.setItem('sidebarHidden','true'); } catch(e) {}
-                } else {
-                    sidebar.classList.remove('hidden');
-                    try { localStorage.setItem('sidebarHidden','false'); } catch(e) {}
-                }
+            function isHidden(el){
+                if (!el) return true;
+                var cs = window.getComputedStyle(el);
+                return cs.display === 'none' || el.classList.contains('hidden') || el.offsetParent === null;
             }
+
+            function hide(){
+                if (!sidebar) return;
+                sidebar.classList.add('hidden');
+                sidebar.style.display = 'none';
+                if (btn) btn.setAttribute('aria-expanded','false');
+                try { localStorage.setItem('sidebarHidden','true'); } catch(e) {}
+            }
+
+            function show(){
+                if (!sidebar) return;
+                sidebar.classList.remove('hidden');
+                sidebar.style.display = '';
+                if (btn) btn.setAttribute('aria-expanded','true');
+                try { localStorage.setItem('sidebarHidden','false'); } catch(e) {}
+            }
+
+            function setHidden(hidden){ hidden ? hide() : show(); }
 
             var saved = null;
             try { saved = localStorage.getItem('sidebarHidden'); } catch(e) {}
             var isMobile = window.matchMedia('(max-width: 767px)').matches;
-            var initialHidden = (saved === 'true') || isMobile;
+            var initialHidden = (saved === 'true') || (saved === null && isMobile);
             setHidden(initialHidden);
 
             if (btn) {
                 btn.addEventListener('click', function(){
-                    var nowHidden = sidebar && sidebar.classList.contains('hidden');
-                    setHidden(!nowHidden);
+                    setHidden(isHidden(sidebar));
                 });
             }
 
-            // expose a global toggle to ensure inline onclick works
+            // Global toggle for inline onclick fallback
             window.toggleSidebar = function(){
-                var nowHidden = sidebar && sidebar.classList.contains('hidden');
-                setHidden(!nowHidden);
+                setHidden(isHidden(sidebar));
             };
         })();
     </script>
