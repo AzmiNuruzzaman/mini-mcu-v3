@@ -7,6 +7,7 @@ from utils.validators import normalize_string, validate_lokasi, safe_date
 DB_COLUMNS = {
     "nama": ["nama"],
     "jabatan": ["jabatan"],
+    "lokasi": ["lokasi", "location", "site"],
     "tanggal_lahir": ["tanggal_lahir", "tgl_lahir", "birthdate"]
 }
 
@@ -28,7 +29,7 @@ def map_columns(df: pd.DataFrame):
 def parse_master_karyawan(file_path):
     """
     Upload master karyawan data (V2):
-    - Sheet name = lokasi
+    - Prefer a 'lokasi' column per row; fallback to sheet name
     - Columns: nama, jabatan, tanggal_lahir
     - tanggal_lahir optional
     - Insert/update into Karyawan DB
@@ -41,13 +42,8 @@ def parse_master_karyawan(file_path):
     for sheet_name, sheet_df in all_sheets.items():
         # ✅ normalize column names to handle "Tanggal Lahir" → "tanggal_lahir"
         sheet_df.columns = sheet_df.columns.str.strip().str.lower().str.replace(' ', '_')
-
-        lokasi = normalize_string(sheet_name)
-        if not validate_lokasi(lokasi):
-            # skip entire sheet if lokasi invalid
-            total_skipped += len(sheet_df)
-            skipped_rows.extend([(sheet_name, i, "Invalid lokasi") for i in range(len(sheet_df))])
-            continue
+        # Default lokasi from sheet name (used as fallback only)
+        sheet_lokasi = normalize_string(sheet_name)
 
         col_map = map_columns(sheet_df)
         rename_dict = {v: k for k, v in col_map.items() if v}
@@ -63,9 +59,19 @@ def parse_master_karyawan(file_path):
             jabatan = normalize_string(row.get("jabatan"))
             tanggal_lahir = safe_date(row.get("tanggal_lahir"))
 
+            # Determine lokasi: prefer column value; fallback to sheet name
+            lokasi_cell = normalize_string(row.get("lokasi")) if "lokasi" in sheet_df.columns else ""
+            lokasi = lokasi_cell if validate_lokasi(lokasi_cell) else sheet_lokasi
+
             if not nama or not jabatan:
                 total_skipped += 1
                 skipped_rows.append((sheet_name, idx, "Missing nama or jabatan"))
+                continue
+
+            # If neither column nor sheet provided a valid lokasi, skip row
+            if not validate_lokasi(lokasi):
+                total_skipped += 1
+                skipped_rows.append((sheet_name, idx, "Invalid lokasi"))
                 continue
 
             uid = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{nama}-{jabatan}"))

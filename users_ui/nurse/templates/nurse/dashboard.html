@@ -152,30 +152,30 @@
                     {% endfor %}
                 </tbody>
             </table>
-            
-            <!-- Pagination Controls -->
-            {% if total_pages > 1 %}
-            <div class="flex justify-center items-center gap-2 mt-4">
-                {% if current_page > 1 %}
-                <a href="?submenu={{ active_submenu }}&page={{ current_page|add:'-1' }}{% if filters.nama %}&nama={{ filters.nama }}{% endif %}{% if filters.jabatan %}&jabatan={{ filters.jabatan }}{% endif %}{% if filters.lokasi %}&lokasi={{ filters.lokasi }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}" 
-                   class="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">
-                    Sebelumnya
-                </a>
-                {% endif %}
-                
-                <span class="px-3 py-1">
-                    Page {{ current_page }} of {{ total_pages }}
-                </span>
-                
-                {% if current_page < total_pages %}
-                <a href="?submenu={{ active_submenu }}&page={{ current_page|add:'1' }}{% if filters.nama %}&nama={{ filters.nama }}{% endif %}{% if filters.jabatan %}&jabatan={{ filters.jabatan }}{% endif %}{% if filters.lokasi %}&lokasi={{ filters.lokasi }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}" 
-                   class="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">
-                    Berikutnya
-                </a>
-                {% endif %}
-            </div>
+        </div>
+
+        <!-- Pagination Controls (fixed & centered) -->
+        {% if total_pages > 1 %}
+        <div class="fixed bottom-6 left-1/2 -translate-x-1/2 transform z-40 flex justify-center items-center gap-2 bg-white/90 backdrop-blur-sm rounded-full shadow-md px-4 py-2 border border-gray-200">
+            {% if current_page > 1 %}
+            <a href="?submenu={{ active_submenu }}&page={{ current_page|add:'-1' }}{% if filters.nama %}&nama={{ filters.nama }}{% endif %}{% if filters.jabatan %}&jabatan={{ filters.jabatan }}{% endif %}{% if filters.lokasi %}&lokasi={{ filters.lokasi }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}"
+               class="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">
+                Sebelumnya
+            </a>
+            {% endif %}
+
+            <span class="px-3 py-1 text-gray-700">
+                Page {{ current_page }} of {{ total_pages }}
+            </span>
+
+            {% if current_page < total_pages %}
+            <a href="?submenu={{ active_submenu }}&page={{ current_page|add:'1' }}{% if filters.nama %}&nama={{ filters.nama }}{% endif %}{% if filters.jabatan %}&jabatan={{ filters.jabatan }}{% endif %}{% if filters.lokasi %}&lokasi={{ filters.lokasi }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}"
+               class="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">
+                Berikutnya
+            </a>
             {% endif %}
         </div>
+        {% endif %}
     </div>
 
     <!-- Grafik Content -->
