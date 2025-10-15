@@ -113,6 +113,7 @@ def load_checkups():
             "gula_darah_sewaktu": c.gula_darah_sewaktu,
             "cholesterol": c.cholesterol,
             "asam_urat": c.asam_urat,
+            "derajat_kesehatan": c.derajat_kesehatan,
             "nama": c.uid.nama,
             "jabatan": c.uid.jabatan,
             "lokasi": c.uid.lokasi,

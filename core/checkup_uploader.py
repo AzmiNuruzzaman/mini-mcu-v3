@@ -23,6 +23,7 @@ CHECKUP_COLUMNS = {
     "asam_urat": ["asam_urat", "urat", "uric_acid"],
     "lokasi": ["lokasi", "location", "site"],
     "keterangan": ["keterangan", "notes", "remark"],
+    "derajat_kesehatan": ["derajat_kesehatan", "derajat kesehatan", "derajat"],
 }
 
 MANDATORY_CHECKUP_FIELDS = ["uid", "tanggal_checkup"]
@@ -81,6 +82,10 @@ def parse_checkup_xls(file_path):
             if col in df.columns:
                 df[col] = df[col].apply(normalize_string)
 
+        # Normalize derajat_kesehatan to uppercase P1..P7 without extra spaces
+        if 'derajat_kesehatan' in df.columns:
+            df['derajat_kesehatan'] = df['derajat_kesehatan'].astype(str).str.strip().str.upper()
+
         # Convert numeric fields
         numeric_cols = ['tinggi','berat','lingkar_perut','gula_darah_puasa','gula_darah_sewaktu',
                         'cholesterol','asam_urat','umur','bmi']
@@ -124,6 +129,7 @@ def parse_checkup_xls(file_path):
                     'cholesterol': row_dict.get('cholesterol'),
                     'asam_urat': row_dict.get('asam_urat'),
                     'lokasi': row_dict.get('lokasi') or sheet_name,
+                    'derajat_kesehatan': row_dict.get('derajat_kesehatan'),
                 }
                 obj = insert_medical_checkup(**checkup_data)
                 inserted_ids.append(obj.checkup_id)
