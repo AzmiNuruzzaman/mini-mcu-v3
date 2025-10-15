@@ -182,7 +182,23 @@
                         <td class="px-6 py-4 whitespace-nowrap">{{ employee.cholesterol|default:"-" }}</td>
                         <td class="px-6 py-4 whitespace-nowrap">{{ employee.asam_urat|default:"-" }}</td>
                         <td class="px-6 py-4 whitespace-nowrap">{{ employee.tekanan_darah|default:"-" }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.derajat_kesehatan|default:"-" }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            {% with dk=employee.derajat_kesehatan|default:""|upper %}
+                                {% if dk == "P1" or dk == "P2" or dk == "P3" %}
+                                    <span class="text-green-600 font-semibold">{{ dk }}</span>
+                                {% elif dk == "P4" %}
+                                    <span class="text-yellow-600 font-semibold">{{ dk }}</span>
+                                {% elif dk == "P5" %}
+                                    <span class="text-orange-600 font-semibold">{{ dk }}</span>
+                                {% elif dk == "P6" or dk == "P7" %}
+                                    <span class="text-red-600 font-semibold">{{ dk }}</span>
+                                {% elif dk %}
+                                    <span class="text-gray-700 font-semibold">{{ dk }}</span>
+                                {% else %}
+                                    <span class="text-gray-400 italic">-</span>
+                                {% endif %}
+                            {% endwith %}
+                        </td>
                         <td class="px-6 py-4 whitespace-nowrap">{{ employee.tanggal_MCU|default:"-" }}</td>
                         <td class="px-6 py-4 whitespace-nowrap">{{ employee.expired_MCU|default:"-" }}</td>
                         <td class="px-6 py-4 whitespace-nowrap">

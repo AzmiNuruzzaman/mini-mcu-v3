@@ -95,7 +95,15 @@ local_db = {
 
 db_url = os.getenv("DATABASE_URL") or os.getenv("DATABASE_PUBLIC_URL")
 
-if os.getenv("DJANGO_USE_LOCAL_DB", "False").lower() == "true":
+# Optional lightweight local preview using SQLite
+if os.getenv("DJANGO_USE_SQLITE", "False").lower() == "true":
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
+elif os.getenv("DJANGO_USE_LOCAL_DB", "False").lower() == "true":
     DATABASES = {"default": local_db}
 elif db_url:
     # Toggle SSL requirement based on host: public proxy needs SSL, internal may not
