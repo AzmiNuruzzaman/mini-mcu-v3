@@ -84,7 +84,7 @@
                 <!-- Header -->
                 <header class="bg-white border-b border-gray-200 px-8 py-4 flex justify-between items-center">
                     <div class="flex items-center gap-3">
-                        <button id="sidebarToggle" type="button" aria-label="Toggle sidebar"
+                        <button id="sidebarToggle" type="button" aria-label="Toggle sidebar" onclick="window.toggleSidebar && window.toggleSidebar()"
                                 class="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary">
                             <i class="fas fa-bars"></i>
                             <span class="hidden sm:inline">Menu</span>
@@ -147,6 +147,12 @@
                     setHidden(!nowHidden);
                 });
             }
+
+            // expose a global toggle to ensure inline onclick works
+            window.toggleSidebar = function(){
+                var nowHidden = sidebar && sidebar.classList.contains('hidden');
+                setHidden(!nowHidden);
+            };
         })();
     </script>
 </body>

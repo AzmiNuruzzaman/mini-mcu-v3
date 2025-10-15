@@ -238,40 +238,80 @@
   <!-- History Medical Check Up Content -->
   <div id="history-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4 {% if active_submenu != 'history' %}hidden{% endif %}">
       <h2 class="text-xl font-bold mb-3">History Medical Check Up</h2>
-      {% if history_checkups and history_checkups|length > 0 %}
+      {% if history_dashboard and history_dashboard|length > 0 %}
       <div class="overflow-x-auto">
-        <table class="min-w-full table-auto border-collapse border border-gray-300">
-          <thead>
-            <tr class="bg-gray-100">
-              <th class="border px-4 py-2 text-left">Tanggal</th>
-              <th class="border px-4 py-2 text-left">BMI</th>
-              <th class="border px-4 py-2 text-left">Berat</th>
-              <th class="border px-4 py-2 text-left">Tinggi</th>
-              <th class="border px-4 py-2 text-left">Lingkar Perut</th>
-              <th class="border px-4 py-2 text-left">GDP</th>
-              <th class="border px-4 py-2 text-left">GDS</th>
-              <th class="border px-4 py-2 text-left">Chol</th>
-              <th class="border px-4 py-2 text-left">Asam Urat</th>
-              <th class="border px-4 py-2 text-left">Status</th>
+        <table class="min-w-full bg-white">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">UID</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nama</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Jabatan</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lokasi</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal Lahir</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Umur</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal Checkup</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tinggi</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Berat</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BMI</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lingkar Perut</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">GDP</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">GDS</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cholesterol</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Asam Urat</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tekanan Darah</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Derajat Kesehatan</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal MCU</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Expired MCU</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
             </tr>
           </thead>
-          <tbody>
-            {% for rec in history_checkups %}
+          <tbody class="divide-y divide-gray-200">
+            {% for row in history_dashboard %}
             <tr>
-              <td class="border px-4 py-2">{{ rec.tanggal_checkup|default:"-" }}</td>
-              <td class="border px-4 py-2 {% if rec.flags and rec.flags.bmi_high %}text-red-600 font-semibold{% endif %}">{{ rec.bmi|default:"-" }}</td>
-              <td class="border px-4 py-2">{{ rec.berat|default:"-" }}</td>
-              <td class="border px-4 py-2">{{ rec.tinggi|default:"-" }}</td>
-              <td class="border px-4 py-2">{{ rec.lingkar_perut|default:"-" }}</td>
-              <td class="border px-4 py-2 {% if rec.flags and rec.flags.gdp_high %}text-red-600 font-semibold{% endif %}">{{ rec.gula_darah_puasa|default:"-" }}</td>
-              <td class="border px-4 py-2 {% if rec.flags and rec.flags.gds_high %}text-red-600 font-semibold{% endif %}">{{ rec.gula_darah_sewaktu|default:"-" }}</td>
-              <td class="border px-4 py-2 {% if rec.flags and rec.flags.chol_high %}text-red-600 font-semibold{% endif %}">{{ rec.cholesterol|default:"-" }}</td>
-              <td class="border px-4 py-2 {% if rec.flags and rec.flags.asam_high %}text-red-600 font-semibold{% endif %}">{{ rec.asam_urat|default:"-" }}</td>
-              <td class="border px-4 py-2">
-                {% if rec.status %}
-                  <span class="inline-block px-2 py-1 rounded text-white {% if rec.status == 'Unwell' %}bg-red-500{% else %}bg-green-500{% endif %}">{{ rec.status }}</span>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ forloop.counter }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">{{ row.uid }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">{{ row.nama|default:"-" }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">{{ row.jabatan|default:"-" }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">{{ row.lokasi|default:"-" }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">{{ row.tanggal_lahir|default:"-" }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">{{ row.umur|default:"-" }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">{{ row.tanggal_checkup|default:"-" }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">{{ row.tinggi|default:"-" }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">{{ row.berat|default:"-" }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">{{ row.bmi|default:"-" }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">{{ row.lingkar_perut|default:"-" }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">{{ row.gula_darah_puasa|default:"-" }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">{{ row.gula_darah_sewaktu|default:"-" }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">{{ row.cholesterol|default:"-" }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">{{ row.asam_urat|default:"-" }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">{{ row.tekanan_darah|default:"-" }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                {% with dk=row.derajat_kesehatan|default:""|upper %}
+                  {% if dk == "P1" or dk == "P2" or dk == "P3" %}
+                    <span class="text-green-600 font-semibold">{{ dk }}</span>
+                  {% elif dk == "P4" %}
+                    <span class="text-yellow-600 font-semibold">{{ dk }}</span>
+                  {% elif dk == "P5" %}
+                    <span class="text-orange-600 font-semibold">{{ dk }}</span>
+                  {% elif dk == "P6" or dk == "P7" %}
+                    <span class="text-red-600 font-semibold">{{ dk }}</span>
+                  {% elif dk %}
+                    <span class="text-gray-700 font-semibold">{{ dk }}</span>
+                  {% else %}
+                    <span class="text-gray-400 italic">-</span>
+                  {% endif %}
+                {% endwith %}
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">{{ row.tanggal_MCU|default:"-" }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">{{ row.expired_MCU|default:"-" }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                {% if row.status == "Unwell" %}
+                  <span class="text-red-600 font-semibold">Unwell</span>
+                {% elif row.status == "Well" %}
+                  <span class="text-green-600 font-semibold">Well</span>
                 {% else %}
-                  <span class="text-gray-500">-</span>
+                  <span class="text-gray-400 italic">-</span>
                 {% endif %}
               </td>
             </tr>
