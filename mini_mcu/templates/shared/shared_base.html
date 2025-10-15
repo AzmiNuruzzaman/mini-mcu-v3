@@ -164,13 +164,13 @@
 
             if (btn) {
                 btn.addEventListener('click', function(){
-                    setHidden(isHidden(sidebar));
+                    setHidden(!isHidden(sidebar));
                 });
             }
 
             // Global toggle for inline onclick fallback
             window.toggleSidebar = function(){
-                setHidden(isHidden(sidebar));
+                setHidden(!isHidden(sidebar));
             };
         })();
     </script>
