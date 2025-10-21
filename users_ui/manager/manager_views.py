@@ -45,7 +45,7 @@ from core.helpers import (
 import plotly.graph_objects as go
 import plotly.io as pio
 from core import excel_parser, checkup_uploader
-from utils.export_utils import generate_karyawan_template_excel, export_checkup_data_excel as build_checkup_excel
+from utils.export_utils import generate_karyawan_template_excel, export_checkup_data_excel as build_checkup_excel, export_checkup_data_pdf as build_checkup_pdf
 from users_ui.qr.qr_views import qr_detail_view, qr_bulk_download_view
 
 # -------------------------
@@ -986,7 +986,7 @@ def manage_karyawan_uid(request):
 # -------------------------
 def delete_karyawan(request, uid):
     """Delete a single employee by UID safely and return to main data page."""
-    from core.queries import delete_employee_by_uid  # Ensure this exists
+    from core.queries import delete_employee_by_uid
 
     if not request.session.get("authenticated") or request.session.get("user_role") != "Manager":
         return redirect("accounts:login")
@@ -997,9 +997,7 @@ def delete_karyawan(request, uid):
     except Exception as e:
         request.session['error_message'] = f"Failed to delete employee: {e}"
 
-    # Redirect back to the main Hapus Data Karyawan page
     return redirect(reverse("manager:hapus_data_karyawan"))
-
 # -------------------------
 # Tab 5c: Reset All Employees
 # -------------------------
@@ -1269,6 +1267,11 @@ def employee_profile(request, uid):
 
     # Build history records for template
     history_checkups = []
+    # Employee BMI fallback for rows that lack BMI (no auto-calculation)
+    try:
+        emp_bmi = pd.to_numeric((employee_clean or {}).get('bmi', None), errors='coerce')
+    except Exception:
+        emp_bmi = None
     try:
         if checkups is not None and not checkups.empty:
             df_hist = checkups.copy()
@@ -1277,6 +1280,12 @@ def employee_profile(request, uid):
             from core.helpers import compute_status
             for _, row in df_hist.iterrows():
                 bmi_n = pd.to_numeric(row.get('bmi', None), errors='coerce')
+                # BMI fallback: no autocalc; use employee BMI if row BMI missing/zero
+                try:
+                    if ((bmi_n is None) or (isinstance(bmi_n, float) and pd.isna(bmi_n)) or (float(bmi_n) == 0.0)) and pd.notna(emp_bmi):
+                        bmi_n = float(emp_bmi)
+                except Exception:
+                    pass
                 gdp_n = pd.to_numeric(row.get('gula_darah_puasa', None), errors='coerce')
                 gds_n = pd.to_numeric(row.get('gula_darah_sewaktu', None), errors='coerce')
                 chol_n = pd.to_numeric(row.get('cholesterol', None), errors='coerce')
@@ -1293,7 +1302,7 @@ def employee_profile(request, uid):
                 tanggal_str = dt.strftime("%d/%m/%y") if pd.notna(dt) else ""
                 history_checkups.append({
                     'tanggal_checkup': tanggal_str,
-                    'bmi': float(bmi_n) if pd.notna(bmi_n) else None,
+                    'bmi': float(bmi_n) if pd.notna(bmi_n) and float(bmi_n) != 0.0 else None,
                     'berat': row.get('berat', None),
                     'tinggi': row.get('tinggi', None),
                     'lingkar_perut': row.get('lingkar_perut', None),
@@ -1354,6 +1363,7 @@ def employee_profile(request, uid):
                 tinggi_n = pd.to_numeric(row.get('tinggi', None), errors='coerce')
                 berat_n = pd.to_numeric(row.get('berat', None), errors='coerce')
                 bmi_n = pd.to_numeric(row.get('bmi', None), errors='coerce')
+                # BMI fallback: do NOT auto-calculate. Defer fallback and use employee BMI later if row BMI is missing/zero.
                 lp_n = pd.to_numeric(row.get('lingkar_perut', None), errors='coerce')
                 gdp_n = pd.to_numeric(row.get('gula_darah_puasa', None), errors='coerce')
                 gds_n = pd.to_numeric(row.get('gula_darah_sewaktu', None), errors='coerce')
@@ -1364,6 +1374,18 @@ def employee_profile(request, uid):
                     umur_val = (employee_clean or {}).get('umur', None)
                 except Exception:
                     umur_val = None
+                # Employee BMI for fallback
+                try:
+                    emp_bmi = pd.to_numeric((employee_clean or {}).get('bmi', None), errors='coerce')
+                except Exception:
+                    emp_bmi = None
+
+                # BMI fallback: no autocalc; use employee BMI if row BMI missing/zero
+                try:
+                    if ((bmi_n is None) or (isinstance(bmi_n, float) and pd.isna(bmi_n)) or (float(bmi_n) == 0.0)) and pd.notna(emp_bmi):
+                        bmi_n = float(emp_bmi)
+                except Exception:
+                    pass
 
                 # Date formatting
                 tc_dt = pd.to_datetime(row.get('tanggal_checkup'), errors='coerce')
@@ -1385,6 +1407,18 @@ def employee_profile(request, uid):
                         dk_val = (employee_clean or {}).get('derajat_kesehatan')
                 except Exception:
                     pass
+                # BMI category: prefer row value, fallback to employee, else compute from BMI
+                bmi_cat_val = row.get('bmi_category', None)
+                try:
+                    def _is_blank(x):
+                        return (x is None) or (isinstance(x, float) and pd.isna(x)) or (isinstance(x, str) and not str(x).strip())
+                    if _is_blank(bmi_cat_val):
+                        bmi_cat_val = (employee_clean or {}).get('bmi_category', None)
+                    if _is_blank(bmi_cat_val):
+                        bmi_source = bmi_n if pd.notna(bmi_n) else (emp_bmi if pd.notna(emp_bmi) else None)
+                        bmi_cat_val = compute_bmi_category(bmi_source)
+                except Exception:
+                    pass
 
                 history_dashboard.append({
                     'uid': str(row.get('uid', uid)),
@@ -1396,7 +1430,8 @@ def employee_profile(request, uid):
                     'tanggal_checkup': tanggal_str,
                     'tinggi': float(tinggi_n) if pd.notna(tinggi_n) else None,
                     'berat': float(berat_n) if pd.notna(berat_n) else None,
-                    'bmi': float(bmi_n) if pd.notna(bmi_n) else None,
+                    'bmi': float(bmi_n) if pd.notna(bmi_n) and float(bmi_n) != 0.0 else None,
+                    'bmi_category': str(bmi_cat_val) if bmi_cat_val is not None else None,
                     'lingkar_perut': float(lp_n) if pd.notna(lp_n) else None,
                     'gula_darah_puasa': float(gdp_n) if pd.notna(gdp_n) else None,
                     'gula_darah_sewaktu': float(gds_n) if pd.notna(gds_n) else None,
@@ -1653,7 +1688,7 @@ def export_master_karyawan_excel(request):
 
 @require_http_methods(["GET"])
 def export_checkup_history_by_uid(request, uid):
-    """Export all historical medical checkup data for the specified UID only."""
+    """Export the CURRENT displayed history medical checkup DataFrame (no new computation) for the specified UID."""
     if not request.session.get("authenticated") or request.session.get("user_role") != "Manager":
         return redirect("accounts:login")
     try:
@@ -1661,13 +1696,140 @@ def export_checkup_history_by_uid(request, uid):
         if not Karyawan.objects.filter(uid=uid).exists():
             request.session['error_message'] = f"UID {uid} tidak ditemukan."
             return redirect(reverse("manager:edit_karyawan", kwargs={"uid": uid}) + "?submenu=history")
-        df = get_medical_checkups_by_uid(uid)
-        if df is None or df.empty:
+
+        # Load raw checkups for UID
+        checkups = get_medical_checkups_by_uid(uid)
+        if checkups is None or checkups.empty:
             request.session['warning_message'] = "Tidak ada data checkup untuk UID ini."
             return redirect(reverse("manager:edit_karyawan", kwargs={"uid": uid}) + "?submenu=history")
-        if "uid_id" in df.columns and "uid" not in df.columns:
-            df = df.rename(columns={"uid_id": "uid"})
-        excel_bytes = build_checkup_excel(df)
+
+        # Build the same 'history_dashboard' style rows used by the UI
+        employees_df = get_employees()
+        employee_clean = None
+        if employees_df is not None and not employees_df.empty:
+            try:
+                df_uid = employees_df[employees_df['uid'].astype(str) == str(uid)]
+                if not df_uid.empty:
+                    employee_clean = df_uid.iloc[0].to_dict()
+            except Exception:
+                pass
+
+        df_hist2 = checkups.copy()
+        if "uid_id" in df_hist2.columns and "uid" not in df_hist2.columns:
+            df_hist2 = df_hist2.rename(columns={"uid_id": "uid"})
+        if "tanggal_checkup" in df_hist2.columns:
+            df_hist2["tanggal_checkup"] = pd.to_datetime(df_hist2["tanggal_checkup"], errors="coerce")
+        df_hist2 = df_hist2.sort_values("tanggal_checkup", ascending=False)
+
+        emp_nama = (employee_clean or {}).get('nama')
+        emp_jabatan = (employee_clean or {}).get('jabatan')
+        emp_lokasi = (employee_clean or {}).get('lokasi')
+        # Format tanggal lahir
+        emp_tanggal_lahir = None
+        try:
+            tl_raw = (employee_clean or {}).get('tanggal_lahir')
+            tl_dt = pd.to_datetime(tl_raw, errors='coerce')
+            emp_tanggal_lahir = tl_dt.strftime('%d/%m/%y') if pd.notna(tl_dt) else None
+        except Exception:
+            pass
+        # MCU dates
+        emp_tanggal_mcu = None
+        emp_expired_mcu = None
+        try:
+            mcu_dt = pd.to_datetime((employee_clean or {}).get('tanggal_MCU'), errors='coerce')
+            emp_tanggal_mcu = mcu_dt.strftime('%d/%m/%y') if pd.notna(mcu_dt) else None
+        except Exception:
+            pass
+        try:
+            exp_dt = pd.to_datetime((employee_clean or {}).get('expired_MCU'), errors='coerce')
+            emp_expired_mcu = exp_dt.strftime('%d/%m/%y') if pd.notna(exp_dt) else None
+        except Exception:
+            pass
+        # umur and employee BMI fallback
+        try:
+            umur_val = (employee_clean or {}).get('umur', None)
+        except Exception:
+            umur_val = None
+        try:
+            emp_bmi = pd.to_numeric((employee_clean or {}).get('bmi', None), errors='coerce')
+        except Exception:
+            emp_bmi = None
+
+        rows = []
+        for _, row in df_hist2.iterrows():
+            tinggi_n = pd.to_numeric(row.get('tinggi', None), errors='coerce')
+            berat_n = pd.to_numeric(row.get('berat', None), errors='coerce')
+            bmi_n = pd.to_numeric(row.get('bmi', None), errors='coerce')
+            # BMI fallback: no autocalc; use employee BMI if row BMI missing/zero
+            try:
+                if ((bmi_n is None) or (isinstance(bmi_n, float) and pd.isna(bmi_n)) or (float(bmi_n) == 0.0)) and pd.notna(emp_bmi):
+                    bmi_n = float(emp_bmi)
+            except Exception:
+                pass
+            lp_n = pd.to_numeric(row.get('lingkar_perut', None), errors='coerce')
+            gdp_n = pd.to_numeric(row.get('gula_darah_puasa', None), errors='coerce')
+            gds_n = pd.to_numeric(row.get('gula_darah_sewaktu', None), errors='coerce')
+            chol_n = pd.to_numeric(row.get('cholesterol', None), errors='coerce')
+            asam_n = pd.to_numeric(row.get('asam_urat', None), errors='coerce')
+            tc_dt = pd.to_datetime(row.get('tanggal_checkup'), errors='coerce')
+            tanggal_str = tc_dt.strftime('%d/%m/%y') if pd.notna(tc_dt) else None
+
+            # Status (match UI)
+            status_val = compute_status({
+                'gula_darah_puasa': gdp_n if pd.notna(gdp_n) else 0,
+                'gula_darah_sewaktu': gds_n if pd.notna(gds_n) else 0,
+                'cholesterol': chol_n if pd.notna(chol_n) else 0,
+                'asam_urat': asam_n if pd.notna(asam_n) else 0,
+                'bmi': bmi_n if pd.notna(bmi_n) else 0,
+            })
+
+            # Derajat Kesehatan with fallback
+            dk_val = row.get('derajat_kesehatan', None)
+            try:
+                if dk_val is None or (isinstance(dk_val, float) and pd.isna(dk_val)) or (isinstance(dk_val, str) and not dk_val.strip()):
+                    dk_val = (employee_clean or {}).get('derajat_kesehatan')
+            except Exception:
+                pass
+
+            # BMI Category: prefer row, fallback to employee, else compute from BMI
+            bmi_cat_val = row.get('bmi_category', None)
+            def _is_blank(x):
+                return (x is None) or (isinstance(x, float) and pd.isna(x)) or (isinstance(x, str) and not str(x).strip())
+            if _is_blank(bmi_cat_val):
+                bmi_cat_val = (employee_clean or {}).get('bmi_category', None)
+            if _is_blank(bmi_cat_val):
+                bmi_source = bmi_n if pd.notna(bmi_n) else (emp_bmi if pd.notna(emp_bmi) else None)
+                bmi_cat_val = compute_bmi_category(bmi_source)
+
+            rows.append({
+                'UID': str(row.get('uid', uid)),
+                'Nama': emp_nama,
+                'Jabatan': emp_jabatan,
+                'Lokasi': emp_lokasi,
+                'Tanggal Lahir': emp_tanggal_lahir,
+                'Umur': int(umur_val) if pd.notna(pd.to_numeric(umur_val, errors='coerce')) else None,
+                'BMI': float(bmi_n) if pd.notna(bmi_n) and float(bmi_n) != 0.0 else None,
+                'BMI Category': str(bmi_cat_val) if bmi_cat_val is not None else None,
+                'Tanggal Checkup': tanggal_str,
+                'Lingkar Perut': float(lp_n) if pd.notna(lp_n) else None,
+                'Gula Darah Puasa': float(gdp_n) if pd.notna(gdp_n) else None,
+                'Gula Darah Sewaktu': float(gds_n) if pd.notna(gds_n) else None,
+                'Cholesterol': float(chol_n) if pd.notna(chol_n) else None,
+                'Asam Urat': float(asam_n) if pd.notna(asam_n) else None,
+                'Tekanan Darah': row.get('tekanan_darah', None),
+                'Derajat Kesehatan': str(dk_val) if dk_val is not None else None,
+                'Tanggal MCU': emp_tanggal_mcu,
+                'Expired MCU': emp_expired_mcu,
+                'Status': status_val,
+            })
+
+        import pandas as _pd
+        df_export = _pd.DataFrame(rows)
+        columns_order = [
+            'UID','Nama','Jabatan','Lokasi','Tanggal Lahir','Umur','BMI','BMI Category','Tanggal Checkup','Lingkar Perut','Gula Darah Puasa','Gula Darah Sewaktu','Cholesterol','Asam Urat','Tekanan Darah','Derajat Kesehatan','Tanggal MCU','Expired MCU','Status'
+        ]
+
+        excel_bytes = build_checkup_excel(df_export, enrich=False, columns=columns_order)
         filename = f"checkup_history_{uid}.xlsx"
         response = HttpResponse(excel_bytes, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         response["Content-Disposition"] = f"attachment; filename={filename}"
@@ -1678,7 +1840,7 @@ def export_checkup_history_by_uid(request, uid):
 
 @require_http_methods(["GET"])
 def export_checkup_row(request, uid, checkup_id):
-    """Export a single medical checkup row for the specified UID, safeguarding association."""
+    """Export a single medical checkup row for the specified UID, restricting to visible columns (no gestational_diabetes)."""
     if not request.session.get("authenticated") or request.session.get("user_role") != "Manager":
         return redirect("accounts:login")
     try:
@@ -1691,13 +1853,363 @@ def export_checkup_row(request, uid, checkup_id):
         df = pd.DataFrame(list(qs.values()))
         if "uid_id" in df.columns and "uid" not in df.columns:
             df = df.rename(columns={"uid_id": "uid"})
-        excel_bytes = build_checkup_excel(df)
+
+        # Fetch employee baseline for fallbacks
+        employee_clean = get_employee_by_uid(uid) or {}
+
+        # Prepare a single-row export matching the history UID export columns
+        from core.helpers import compute_status
+        rows = []
+        for _, row in df.iterrows():
+            # Basic fields and conversions
+            tinggi_n = pd.to_numeric(row.get('tinggi', None), errors='coerce')
+            berat_n = pd.to_numeric(row.get('berat', None), errors='coerce')
+            bmi_n = pd.to_numeric(row.get('bmi', None), errors='coerce')
+            lp_n = pd.to_numeric(row.get('lingkar_perut', None), errors='coerce')
+            gdp_n = pd.to_numeric(row.get('gula_darah_puasa', None), errors='coerce')
+            gds_n = pd.to_numeric(row.get('gula_darah_sewaktu', None), errors='coerce')
+            chol_n = pd.to_numeric(row.get('cholesterol', None), errors='coerce')
+            asam_n = pd.to_numeric(row.get('asam_urat', None), errors='coerce')
+            tc_dt = pd.to_datetime(row.get('tanggal_checkup'), errors='coerce')
+            tanggal_str = tc_dt.strftime('%d/%m/%y') if pd.notna(tc_dt) else None
+
+            # Employee context and fallbacks
+            emp_nama = employee_clean.get('nama')
+            emp_jabatan = employee_clean.get('jabatan')
+            emp_lokasi = employee_clean.get('lokasi')
+            try:
+                tl_dt = pd.to_datetime(employee_clean.get('tanggal_lahir'), errors='coerce')
+                emp_tanggal_lahir = tl_dt.strftime('%d/%m/%y') if pd.notna(tl_dt) else None
+            except Exception:
+                emp_tanggal_lahir = None
+            try:
+                mcu_dt = pd.to_datetime(employee_clean.get('tanggal_MCU'), errors='coerce')
+                emp_tanggal_mcu = mcu_dt.strftime('%d/%m/%y') if pd.notna(mcu_dt) else None
+            except Exception:
+                emp_tanggal_mcu = None
+            try:
+                exp_dt = pd.to_datetime(employee_clean.get('expired_MCU'), errors='coerce')
+                emp_expired_mcu = exp_dt.strftime('%d/%m/%y') if pd.notna(exp_dt) else None
+            except Exception:
+                emp_expired_mcu = None
+            umur_val = employee_clean.get('umur', None)
+            emp_bmi = pd.to_numeric(employee_clean.get('bmi', None), errors='coerce')
+
+            # Status value to match UI thresholds
+            status_val = compute_status({
+                'gula_darah_puasa': gdp_n if pd.notna(gdp_n) else 0,
+                'gula_darah_sewaktu': gds_n if pd.notna(gds_n) else 0,
+                'cholesterol': chol_n if pd.notna(chol_n) else 0,
+                'asam_urat': asam_n if pd.notna(asam_n) else 0,
+                'bmi': bmi_n if pd.notna(bmi_n) else (float(emp_bmi) if pd.notna(emp_bmi) else 0),
+            })
+
+            # BMI Category from available BMI source (row or employee)
+            bmi_cat_val = row.get('bmi_category', None)
+            def _is_blank(x):
+                return (x is None) or (isinstance(x, float) and pd.isna(x)) or (isinstance(x, str) and not str(x).strip())
+            if _is_blank(bmi_cat_val):
+                bmi_cat_val = (employee_clean or {}).get('bmi_category', None)
+            if _is_blank(bmi_cat_val):
+                from core.helpers import compute_bmi_category
+                bmi_source = bmi_n if pd.notna(bmi_n) and float(bmi_n) != 0.0 else (emp_bmi if pd.notna(emp_bmi) else None)
+                bmi_cat_val = compute_bmi_category(bmi_source)
+
+            # Build row with visible columns only
+            rows.append({
+                'UID': str(row.get('uid', uid)),
+                'Nama': emp_nama,
+                'Jabatan': emp_jabatan,
+                'Lokasi': emp_lokasi,
+                'Tanggal Lahir': emp_tanggal_lahir,
+                'Umur': int(umur_val) if pd.notna(pd.to_numeric(umur_val, errors='coerce')) else None,
+                'BMI': float(bmi_n) if pd.notna(bmi_n) and float(bmi_n) != 0.0 else (float(emp_bmi) if pd.notna(emp_bmi) else None),
+                'BMI Category': str(bmi_cat_val) if bmi_cat_val is not None else None,
+                'Tanggal Checkup': tanggal_str,
+                'Lingkar Perut': float(lp_n) if pd.notna(lp_n) else None,
+                'Gula Darah Puasa': float(gdp_n) if pd.notna(gdp_n) else None,
+                'Gula Darah Sewaktu': float(gds_n) if pd.notna(gds_n) else None,
+                'Cholesterol': float(chol_n) if pd.notna(chol_n) else None,
+                'Asam Urat': float(asam_n) if pd.notna(asam_n) else None,
+                'Tekanan Darah': row.get('tekanan_darah', None),
+                'Derajat Kesehatan': row.get('derajat_kesehatan', None) or employee_clean.get('derajat_kesehatan', None),
+                'Tanggal MCU': emp_tanggal_mcu,
+                'Expired MCU': emp_expired_mcu,
+                'Status': status_val,
+            })
+
+        import pandas as _pd
+        df_export = _pd.DataFrame(rows)
+        columns_order = [
+            'UID','Nama','Jabatan','Lokasi','Tanggal Lahir','Umur','BMI','BMI Category','Tanggal Checkup','Lingkar Perut','Gula Darah Puasa','Gula Darah Sewaktu','Cholesterol','Asam Urat','Tekanan Darah','Derajat Kesehatan','Tanggal MCU','Expired MCU','Status'
+        ]
+
+        excel_bytes = build_checkup_excel(df_export, enrich=False, columns=columns_order)
         filename = f"checkup_{checkup_id}.xlsx"
         response = HttpResponse(excel_bytes, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         response["Content-Disposition"] = f"attachment; filename={filename}"
         return response
     except Exception as e:
         request.session['error_message'] = f"Gagal mengekspor data checkup: {e}"
+        return redirect(reverse("manager:edit_karyawan", kwargs={"uid": uid}) + "?submenu=history")
+
+@require_http_methods(["GET"])
+def export_checkup_history_by_uid_pdf(request, uid):
+    """Export the CURRENT displayed history medical checkup DataFrame for the specified UID as PDF, with vertical/portrait layout."""
+    if not request.session.get("authenticated") or request.session.get("user_role") != "Manager":
+        return redirect("accounts:login")
+    try:
+        from core.core_models import Karyawan
+        if not Karyawan.objects.filter(uid=uid).exists():
+            request.session['error_message'] = f"UID {uid} tidak ditemukan."
+            return redirect(reverse("manager:edit_karyawan", kwargs={"uid": uid}) + "?submenu=history")
+
+        checkups = get_medical_checkups_by_uid(uid)
+        if checkups is None or checkups.empty:
+            request.session['warning_message'] = "Tidak ada data checkup untuk UID ini."
+            return redirect(reverse("manager:edit_karyawan", kwargs={"uid": uid}) + "?submenu=history")
+
+        employees_df = get_employees()
+        employee_clean = None
+        if employees_df is not None and not employees_df.empty:
+            try:
+                df_uid = employees_df[employees_df['uid'].astype(str) == str(uid)]
+                if not df_uid.empty:
+                    employee_clean = df_uid.iloc[0].to_dict()
+            except Exception:
+                pass
+
+        df_hist2 = checkups.copy()
+        if "uid_id" in df_hist2.columns and "uid" not in df_hist2.columns:
+            df_hist2 = df_hist2.rename(columns={"uid_id": "uid"})
+        if "tanggal_checkup" in df_hist2.columns:
+            df_hist2["tanggal_checkup"] = pd.to_datetime(df_hist2["tanggal_checkup"], errors="coerce")
+        df_hist2 = df_hist2.sort_values("tanggal_checkup", ascending=False)
+
+        emp_nama = (employee_clean or {}).get('nama')
+        emp_jabatan = (employee_clean or {}).get('jabatan')
+        emp_lokasi = (employee_clean or {}).get('lokasi')
+        emp_tanggal_lahir = None
+        try:
+            tl_raw = (employee_clean or {}).get('tanggal_lahir')
+            tl_dt = pd.to_datetime(tl_raw, errors='coerce')
+            emp_tanggal_lahir = tl_dt.strftime('%d/%m/%y') if pd.notna(tl_dt) else None
+        except Exception:
+            pass
+        emp_tanggal_mcu = None
+        emp_expired_mcu = None
+        try:
+            mcu_dt = pd.to_datetime((employee_clean or {}).get('tanggal_MCU'), errors='coerce')
+            emp_tanggal_mcu = mcu_dt.strftime('%d/%m/%y') if pd.notna(mcu_dt) else None
+        except Exception:
+            pass
+        try:
+            exp_dt = pd.to_datetime((employee_clean or {}).get('expired_MCU'), errors='coerce')
+            emp_expired_mcu = exp_dt.strftime('%d/%m/%y') if pd.notna(exp_dt) else None
+        except Exception:
+            pass
+        try:
+            umur_val = (employee_clean or {}).get('umur', None)
+        except Exception:
+            umur_val = None
+        try:
+            emp_bmi = pd.to_numeric((employee_clean or {}).get('bmi', None), errors='coerce')
+        except Exception:
+            emp_bmi = None
+
+        rows = []
+        for _, row in df_hist2.iterrows():
+            bmi_n = pd.to_numeric(row.get('bmi', None), errors='coerce')
+            # BMI fallback: no autocalc; use employee BMI if row BMI missing/zero
+            try:
+                if ((bmi_n is None) or (isinstance(bmi_n, float) and pd.isna(bmi_n)) or (float(bmi_n) == 0.0)) and pd.notna(emp_bmi):
+                    bmi_n = float(emp_bmi)
+            except Exception:
+                pass
+            lp_n = pd.to_numeric(row.get('lingkar_perut', None), errors='coerce')
+            gdp_n = pd.to_numeric(row.get('gula_darah_puasa', None), errors='coerce')
+            gds_n = pd.to_numeric(row.get('gula_darah_sewaktu', None), errors='coerce')
+            chol_n = pd.to_numeric(row.get('cholesterol', None), errors='coerce')
+            asam_n = pd.to_numeric(row.get('asam_urat', None), errors='coerce')
+            tc_dt = pd.to_datetime(row.get('tanggal_checkup'), errors='coerce')
+            tanggal_str = tc_dt.strftime('%d/%m/%y') if pd.notna(tc_dt) else None
+
+            status_val = compute_status({
+                'gula_darah_puasa': gdp_n if pd.notna(gdp_n) else 0,
+                'gula_darah_sewaktu': gds_n if pd.notna(gds_n) else 0,
+                'cholesterol': chol_n if pd.notna(chol_n) else 0,
+                'asam_urat': asam_n if pd.notna(asam_n) else 0,
+                'bmi': bmi_n if pd.notna(bmi_n) else 0,
+            })
+
+            bmi_cat_val = row.get('bmi_category', None)
+            def _is_blank(x):
+                return (x is None) or (isinstance(x, float) and pd.isna(x)) or (isinstance(x, str) and not str(x).strip())
+            if _is_blank(bmi_cat_val):
+                bmi_cat_val = (employee_clean or {}).get('bmi_category', None)
+            if _is_blank(bmi_cat_val):
+                bmi_source = bmi_n if pd.notna(bmi_n) else (emp_bmi if pd.notna(emp_bmi) else None)
+                bmi_cat_val = compute_bmi_category(bmi_source)
+
+            rows.append({
+                'UID': str(row.get('uid', uid)),
+                'Nama': emp_nama,
+                'Jabatan': emp_jabatan,
+                'Lokasi': emp_lokasi,
+                'Tanggal Lahir': emp_tanggal_lahir,
+                'Umur': int(umur_val) if pd.notna(pd.to_numeric(umur_val, errors='coerce')) else None,
+                'BMI': float(bmi_n) if pd.notna(bmi_n) and float(bmi_n) != 0.0 else None,
+                'BMI Category': str(bmi_cat_val) if bmi_cat_val is not None else None,
+                'Tanggal Checkup': tanggal_str,
+                'Lingkar Perut': float(lp_n) if pd.notna(lp_n) else None,
+                'Gula Darah Puasa': float(gdp_n) if pd.notna(gdp_n) else None,
+                'Gula Darah Sewaktu': float(gds_n) if pd.notna(gds_n) else None,
+                'Cholesterol': float(chol_n) if pd.notna(chol_n) else None,
+                'Asam Urat': float(asam_n) if pd.notna(asam_n) else None,
+                'Tekanan Darah': row.get('tekanan_darah', None),
+                'Derajat Kesehatan': row.get('derajat_kesehatan', None) or (employee_clean or {}).get('derajat_kesehatan', None),
+                'Tanggal MCU': emp_tanggal_mcu,
+                'Expired MCU': emp_expired_mcu,
+                'Status': status_val,
+            })
+
+        import pandas as _pd
+        df_export = _pd.DataFrame(rows)
+        columns_order = [
+            'UID','Nama','Jabatan','Lokasi','Tanggal Lahir','Umur','BMI','BMI Category','Tanggal Checkup','Lingkar Perut','Gula Darah Puasa','Gula Darah Sewaktu','Cholesterol','Asam Urat','Tekanan Darah','Derajat Kesehatan','Tanggal MCU','Expired MCU','Status'
+        ]
+
+        pdf_bytes = build_checkup_pdf(
+            df_export,
+            enrich=False,
+            columns=columns_order,
+            orientation='portrait',
+            max_cols_per_table=8,
+            title_text='Mini-MCU Record',
+            list_style=True,
+        )
+        filename = f"checkup_history_{uid}.pdf"
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = f"attachment; filename={filename}"
+        return response
+    except Exception as e:
+        request.session['error_message'] = f"Gagal mengekspor riwayat checkup (PDF): {e}"
+        return redirect(reverse("manager:edit_karyawan", kwargs={"uid": uid}) + "?submenu=history")
+
+@require_http_methods(["GET"])
+def export_checkup_row_pdf(request, uid, checkup_id):
+    """Export a single medical checkup row for the specified UID as PDF, restricting to visible columns (no gestational_diabetes)."""
+    if not request.session.get("authenticated") or request.session.get("user_role") != "Manager":
+        return redirect("accounts:login")
+    try:
+        from core.core_models import Checkup
+        qs = Checkup.objects.filter(checkup_id=checkup_id, uid_id=uid)
+        if not qs.exists():
+            request.session['error_message'] = "Checkup tidak ditemukan untuk UID terkait."
+            return redirect(reverse("manager:edit_karyawan", kwargs={"uid": uid}) + "?submenu=history")
+        import pandas as pd
+        df = pd.DataFrame(list(qs.values()))
+        if "uid_id" in df.columns and "uid" not in df.columns:
+            df = df.rename(columns={"uid_id": "uid"})
+
+        # Fetch employee baseline for fallbacks
+        employee_clean = get_employee_by_uid(uid) or {}
+
+        # Build row with visible columns only (same as UID history export)
+        from core.helpers import compute_status, compute_bmi_category
+        rows = []
+        for _, row in df.iterrows():
+            bmi_n = pd.to_numeric(row.get('bmi', None), errors='coerce')
+            lp_n = pd.to_numeric(row.get('lingkar_perut', None), errors='coerce')
+            gdp_n = pd.to_numeric(row.get('gula_darah_puasa', None), errors='coerce')
+            gds_n = pd.to_numeric(row.get('gula_darah_sewaktu', None), errors='coerce')
+            chol_n = pd.to_numeric(row.get('cholesterol', None), errors='coerce')
+            asam_n = pd.to_numeric(row.get('asam_urat', None), errors='coerce')
+            tc_dt = pd.to_datetime(row.get('tanggal_checkup'), errors='coerce')
+            tanggal_str = tc_dt.strftime('%d/%m/%y') if pd.notna(tc_dt) else None
+
+            # Employee context
+            emp_nama = employee_clean.get('nama')
+            emp_jabatan = employee_clean.get('jabatan')
+            emp_lokasi = employee_clean.get('lokasi')
+            try:
+                tl_dt = pd.to_datetime(employee_clean.get('tanggal_lahir'), errors='coerce')
+                emp_tanggal_lahir = tl_dt.strftime('%d/%m/%y') if pd.notna(tl_dt) else None
+            except Exception:
+                emp_tanggal_lahir = None
+            try:
+                mcu_dt = pd.to_datetime(employee_clean.get('tanggal_MCU'), errors='coerce')
+                emp_tanggal_mcu = mcu_dt.strftime('%d/%m/%y') if pd.notna(mcu_dt) else None
+            except Exception:
+                emp_tanggal_mcu = None
+            try:
+                exp_dt = pd.to_datetime(employee_clean.get('expired_MCU'), errors='coerce')
+                emp_expired_mcu = exp_dt.strftime('%d/%m/%y') if pd.notna(exp_dt) else None
+            except Exception:
+                emp_expired_mcu = None
+            umur_val = employee_clean.get('umur', None)
+            emp_bmi = pd.to_numeric(employee_clean.get('bmi', None), errors='coerce')
+
+            status_val = compute_status({
+                'gula_darah_puasa': gdp_n if pd.notna(gdp_n) else 0,
+                'gula_darah_sewaktu': gds_n if pd.notna(gds_n) else 0,
+                'cholesterol': chol_n if pd.notna(chol_n) else 0,
+                'asam_urat': asam_n if pd.notna(asam_n) else 0,
+                'bmi': bmi_n if pd.notna(bmi_n) else (float(emp_bmi) if pd.notna(emp_bmi) else 0),
+            })
+
+            bmi_cat_val = row.get('bmi_category', None)
+            def _is_blank(x):
+                return (x is None) or (isinstance(x, float) and pd.isna(x)) or (isinstance(x, str) and not str(x).strip())
+            if _is_blank(bmi_cat_val):
+                bmi_cat_val = (employee_clean or {}).get('bmi_category', None)
+            if _is_blank(bmi_cat_val):
+                bmi_source = bmi_n if pd.notna(bmi_n) and float(bmi_n) != 0.0 else (emp_bmi if pd.notna(emp_bmi) else None)
+                bmi_cat_val = compute_bmi_category(bmi_source)
+
+            rows.append({
+                'UID': str(row.get('uid', uid)),
+                'Nama': emp_nama,
+                'Jabatan': emp_jabatan,
+                'Lokasi': emp_lokasi,
+                'Tanggal Lahir': emp_tanggal_lahir,
+                'Umur': int(umur_val) if pd.notna(pd.to_numeric(umur_val, errors='coerce')) else None,
+                'BMI': float(bmi_n) if pd.notna(bmi_n) and float(bmi_n) != 0.0 else (float(emp_bmi) if pd.notna(emp_bmi) else None),
+                'BMI Category': str(bmi_cat_val) if bmi_cat_val is not None else None,
+                'Tanggal Checkup': tanggal_str,
+                'Lingkar Perut': float(lp_n) if pd.notna(lp_n) else None,
+                'Gula Darah Puasa': float(gdp_n) if pd.notna(gdp_n) else None,
+                'Gula Darah Sewaktu': float(gds_n) if pd.notna(gds_n) else None,
+                'Cholesterol': float(chol_n) if pd.notna(chol_n) else None,
+                'Asam Urat': float(asam_n) if pd.notna(asam_n) else None,
+                'Tekanan Darah': row.get('tekanan_darah', None),
+                'Derajat Kesehatan': row.get('derajat_kesehatan', None) or (employee_clean or {}).get('derajat_kesehatan', None),
+                'Tanggal MCU': emp_tanggal_mcu,
+                'Expired MCU': emp_expired_mcu,
+                'Status': status_val,
+            })
+
+        import pandas as _pd
+        df_export = _pd.DataFrame(rows)
+        columns_order = [
+            'UID','Nama','Jabatan','Lokasi','Tanggal Lahir','Umur','BMI','BMI Category','Tanggal Checkup','Lingkar Perut','Gula Darah Puasa','Gula Darah Sewaktu','Cholesterol','Asam Urat','Tekanan Darah','Derajat Kesehatan','Tanggal MCU','Expired MCU','Status'
+        ]
+
+        pdf_bytes = build_checkup_pdf(
+            df_export,
+            enrich=False,
+            columns=columns_order,
+            orientation='portrait',
+            max_cols_per_table=8,
+            title_text='Mini-MCU Record',
+            list_style=True,
+        )
+        filename = f"checkup_{checkup_id}.pdf"
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = f"attachment; filename={filename}"
+        return response
+    except Exception as e:
+        request.session['error_message'] = f"Gagal mengekspor data checkup (PDF): {e}"
         return redirect(reverse("manager:edit_karyawan", kwargs={"uid": uid}) + "?submenu=history")
 
 
@@ -1741,6 +2253,7 @@ from core.helpers import (
     sanitize_df_for_display,
     get_dashboard_checkup_data,
     get_active_menu_for_view,
+    compute_bmi_category,
 )
 from core import excel_parser, checkup_uploader
 from utils.export_utils import generate_karyawan_template_excel, export_checkup_data_excel as build_checkup_excel
@@ -2397,8 +2910,6 @@ def manage_karyawan_uid(request):
 
 
 # -------------------------
-# Tab 5b: Delete Single Employee
+# Tab 5b: Delete Single Employee (trailing duplicate removed)
 # -------------------------
-def delete_karyawan(request, uid):
-    """Delete a single employee by UID safely and return to main data page."""
-    from core.queries import delete_
+# Removed trailing duplicate function that was incomplete to prevent override/syntax issues.

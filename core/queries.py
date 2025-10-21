@@ -4,9 +4,10 @@ import uuid
 import bcrypt
 import pandas as pd
 from django.db import transaction
+from django.db import connection
 from django.db.models import Count, Max
 from core import core_models
-from core.db_utils import fetch_all, fetch_one
+from core.db_utils import fetch_all, fetch_one, execute_raw
 from django.conf import settings
 import json
 from datetime import datetime
@@ -34,21 +35,37 @@ def _round_numeric_cols(df: pd.DataFrame, cols=None, decimals=2) -> pd.DataFrame
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).round(decimals)
     return df
 
+# Add a safe DB introspection helper to avoid selecting non-existent columns on unmanaged tables
+def _db_has_column(table_name: str, column_name: str) -> bool:
+    try:
+        with connection.cursor() as cursor:
+            cols = connection.introspection.get_table_description(cursor, table_name)
+            return any(getattr(c, "name", None) == column_name for c in cols)
+    except Exception as e:
+        print(f"DEBUG: Introspection failed for {table_name}.{column_name}: {e}")
+        return False
+
 # -------------------------
 # Karyawan
 # -------------------------
 def get_employees() -> pd.DataFrame:
     """Return all employees as a DataFrame with properly formatted dates."""
-    qs = core_models.Karyawan.objects.all().values(
-        "uid", "nama", "jabatan", "lokasi", "tanggal_lahir", "tanggal_MCU", "expired_MCU", "derajat_kesehatan",
+    # Build field list dynamically to avoid selecting columns that don't exist in the DB
+    fields = [
+        "uid", "nama", "jabatan", "lokasi", "tanggal_lahir",
+        "tanggal_MCU", "expired_MCU", "derajat_kesehatan",
         # Include anthropometric master data for dashboard display
         "tinggi", "berat", "bmi",
         # BMI category label from XLS
-        "bmi_category"
-    )
+        "bmi_category",
+    ]
+    if _db_has_column("karyawan", "umur"):
+        fields.insert(5, "umur")  # keep umur near tanggal_lahir for template expectations
+
+    qs = core_models.Karyawan.objects.all().values(*fields)
     df = pd.DataFrame(list(qs))
 
-    # Ensure umur column exists for templates, but do not compute it
+    # Ensure umur column exists for templates (pass-through only; no auto-compute)
     if "umur" not in df.columns:
         df["umur"] = None
     
@@ -67,11 +84,17 @@ def get_employees() -> pd.DataFrame:
 
 def get_employee_by_uid(uid):
     """Safely fetch a single employee by UID using explicit column selection."""
-    obj = core_models.Karyawan.objects.filter(uid=uid).values(
-        "uid", "nama", "jabatan", "lokasi", "tanggal_lahir", "tanggal_MCU", "expired_MCU", "derajat_kesehatan",
+    # Build field list dynamically to avoid selecting columns that don't exist in the DB
+    fields = [
+        "uid", "nama", "jabatan", "lokasi", "tanggal_lahir",
+        "tanggal_MCU", "expired_MCU", "derajat_kesehatan",
         # Include anthropometric master data for profile/edit views
-        "tinggi", "berat", "bmi", "bmi_category"
-    ).first()
+        "tinggi", "berat", "bmi", "bmi_category",
+    ]
+    if _db_has_column("karyawan", "umur"):
+        fields.insert(5, "umur")
+
+    obj = core_models.Karyawan.objects.filter(uid=uid).values(*fields).first()
     if obj:
         # Maintain key presence for templates; do not compute umur
         obj["umur"] = obj.get("umur", None)
@@ -282,7 +305,9 @@ def get_upload_history() -> pd.DataFrame:
 
 def delete_employee_by_uid(uid: str):
     """Delete a single Karyawan by UID."""
-    core_models.Karyawan.objects.filter(uid=uid).delete()
+    # Use raw SQL to avoid ORM selecting non-existent columns in some DBs
+    execute_raw("DELETE FROM karyawan WHERE uid=%s", [uid])
+
 
 def save_manual_karyawan_edits(df: pd.DataFrame):
     if df.empty:
@@ -291,13 +316,15 @@ def save_manual_karyawan_edits(df: pd.DataFrame):
         uid = row.get("uid")
         if not uid:
             continue
-        updates = {col: row[col] for col in row.index if col != "uid" and pd.notna(row[col])}
+        # Exclude 'umur' to match legacy DB schemas where Karyawan table has no 'umur' column
+        updates = {col: row[col] for col in row.index if col not in ("uid", "umur") and pd.notna(row[col])}
         if updates:
             core_models.Karyawan.objects.filter(uid=uid).update(**updates)
     return len(df)
 
 def reset_karyawan_data():
-    core_models.Karyawan.objects.all().delete()
+    # Use raw SQL to avoid ORM SELECT of non-existent columns (e.g., umur) on managed=False models
+    execute_raw("DELETE FROM karyawan")
 
 
 def change_username(old_username: str, new_username: str):

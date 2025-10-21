@@ -40,7 +40,9 @@ urlpatterns = [
     path("export-master-karyawan/", manager_views.export_master_karyawan_excel, name="export_master_karyawan"),
     # NEW: Export history by UID and single checkup
     path("employee/<str:uid>/export-history/", manager_views.export_checkup_history_by_uid, name="export_checkup_history_by_uid"),
+    path("employee/<str:uid>/export-history/pdf/", manager_views.export_checkup_history_by_uid_pdf, name="export_checkup_history_by_uid_pdf"),
     path("employee/<str:uid>/checkup/<int:checkup_id>/export/", manager_views.export_checkup_row, name="export_checkup_row"),
+    path("employee/<str:uid>/checkup/<int:checkup_id>/export/pdf/", manager_views.export_checkup_row_pdf, name="export_checkup_row_pdf"),
 
     # ===============================
     # UPLOAD LOG MANAGEMENT

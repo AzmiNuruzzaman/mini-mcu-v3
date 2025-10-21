@@ -9,6 +9,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.styles import Font
 from openpyxl.styles.differential import DifferentialStyle
 from openpyxl.formatting.rule import Rule
+from core.helpers import compute_bmi_category
 
 # -----------------------------
 # Generate Karyawan Template Excel (V2 behavior)
@@ -118,10 +119,50 @@ def generate_karyawan_template_excel(lokasi_filter=None):
 # -----------------------------
 # Export Checkup Data to Excel
 # -----------------------------
-def export_checkup_data_excel(df: pd.DataFrame):
+def export_checkup_data_excel(df: pd.DataFrame, enrich: bool = True, columns: list | None = None):
     """
-    Accepts a DataFrame of checkup data and returns Excel bytes.
+    Returns Excel bytes from the provided DataFrame.
+    If enrich=False, exports the DataFrame as-is (optionally restricted to 'columns') with no merging or extra computation.
+    If enrich=True (default), enriches with master data (nama, jabatan, lokasi, tanggal_lahir, umur, bmi, bmi_category, derajat_kesehatan, tanggal_MCU, expired_MCU) when missing.
     """
+    df = df.copy()
+
+    # Normalize UID column if needed
+    if 'uid_id' in df.columns and 'uid' not in df.columns:
+        df = df.rename(columns={'uid_id': 'uid'})
+
+    if enrich:
+        # Merge with master employee data to fill missing columns
+        emp_df = get_employees()
+        if emp_df is not None and not emp_df.empty and 'uid' in df.columns:
+            master_cols = ['uid', 'nama', 'jabatan', 'lokasi', 'tanggal_lahir', 'umur', 'bmi', 'bmi_category', 'derajat_kesehatan', 'tanggal_MCU', 'expired_MCU']
+            for col in master_cols:
+                if col not in emp_df.columns:
+                    emp_df[col] = None
+            merged = df.merge(emp_df[master_cols], on='uid', how='left', suffixes=('', '_master'))
+            for col in master_cols:
+                if col == 'uid':
+                    continue
+                col_master = f"{col}_master"
+                if col in merged.columns and col_master in merged.columns:
+                    merged[col] = merged[col].where(~merged[col].isna(), merged[col_master])
+                    merged = merged.drop(columns=[col_master])
+                elif col_master in merged.columns and col not in merged.columns:
+                    merged[col] = merged[col_master]
+                    merged = merged.drop(columns=[col_master])
+            df = merged
+
+        # Ensure BMI category is present; compute if missing
+        if 'bmi_category' not in df.columns:
+            df['bmi_category'] = None
+        df['bmi_category'] = df.apply(lambda r: r['bmi_category'] if pd.notna(r.get('bmi_category')) else compute_bmi_category(r.get('bmi')), axis=1)
+
+    # Restrict to specified columns (preserve order) if provided
+    if columns:
+        cols = [c for c in columns if c in df.columns]
+        if cols:
+            df = df[cols]
+
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Checkup Data")
@@ -154,8 +195,174 @@ def export_checkup_data_excel(df: pd.DataFrame):
 
 
 # -----------------------------
+# Export Checkup Data to PDF
+# -----------------------------
+def export_checkup_data_pdf(
+    df: pd.DataFrame,
+    enrich: bool = True,
+    columns: list | None = None,
+    orientation: str = 'portrait',
+    max_cols_per_table: int = 8,
+    title_text: str | None = None,
+    logo_path: str | None = None,
+    list_style: bool = False,
+) -> bytes:
+    """
+    Returns PDF bytes from the provided DataFrame.
+    - If enrich=False, exports the DataFrame as-is (optionally restricted to 'columns') with no merging or extra computation.
+    - If enrich=True, enriches with master data similar to Excel export.
+    - orientation: 'portrait' (default) or 'landscape'.
+    - max_cols_per_table: number of columns per table chunk (tables are stacked vertically to render downward).
+    - title_text: optional title at the top.
+    - logo_path: optional path to logo image placed top-right.
+    - list_style: if True, render each row as a list of field: value items (more professional layout).
+    """
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT
+
+    # Normalize and optionally enrich with master data
+    df = df.copy()
+    if 'uid_id' in df.columns and 'uid' not in df.columns:
+        df = df.rename(columns={'uid_id': 'uid'})
+    if enrich:
+        emp_df = get_employees()
+        if emp_df is not None and not emp_df.empty and 'uid' in df.columns:
+            master_cols = ['uid', 'nama', 'jabatan', 'lokasi', 'tanggal_lahir', 'umur', 'bmi', 'bmi_category', 'derajat_kesehatan', 'tanggal_MCU', 'expired_MCU']
+            for col in master_cols:
+                if col not in emp_df.columns:
+                    emp_df[col] = None
+            merged = df.merge(emp_df[master_cols], on='uid', how='left', suffixes=('', '_master'))
+            for col in master_cols:
+                if col == 'uid':
+                    continue
+                col_master = f"{col}_master"
+                if col in merged.columns and col_master in merged.columns:
+                    merged[col] = merged[col].where(~merged[col].isna(), merged[col_master])
+                    merged = merged.drop(columns=[col_master])
+                elif col_master in merged.columns and col not in merged.columns:
+                    merged[col] = merged[col_master]
+                    merged = merged.drop(columns=[col_master])
+            df = merged
+        if 'bmi_category' not in df.columns:
+            df['bmi_category'] = None
+        df['bmi_category'] = df.apply(lambda r: r['bmi_category'] if pd.notna(r.get('bmi_category')) else compute_bmi_category(r.get('bmi')), axis=1)
+
+    # Restrict to specified columns (preserve order) if provided
+    if columns:
+        cols = [c for c in columns if c in df.columns]
+        if cols:
+            df = df[cols]
+
+    # Prepare data rows (stringify, handle None/NaN)
+    def fmt(v):
+        try:
+            if pd.isna(v):
+                return '-'
+        except Exception:
+            pass
+        if v is None:
+            return '-'
+        return str(v)
+
+    # Determine page orientation
+    pagesize = A4 if orientation == 'portrait' else landscape(A4)
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=pagesize, leftMargin=18, rightMargin=18, topMargin=18, bottomMargin=18)
+
+    elements = []
+    styles = getSampleStyleSheet()
+
+    # Header: Title and optional logo
+    header_flowables = []
+    title_style = ParagraphStyle('TitleLeft', parent=styles['Title'], alignment=TA_LEFT)
+    title_para = Paragraph(title_text or "", title_style) if title_text else None
+    img_flow = None
+    try:
+        if logo_path is None:
+            import os
+            from django.conf import settings
+            default_logo = os.path.join(settings.BASE_DIR, 'static', 'images', 'logo.png')
+            if os.path.exists(default_logo):
+                logo_path = default_logo
+        if logo_path:
+            img_flow = Image(logo_path)
+            img_flow._restrictSize(80, 80)  # Max size
+    except Exception:
+        img_flow = None
+    if title_para or img_flow:
+        # Use a 2-column header table: title left, logo right
+        hdr_data = [[title_para if title_para else "", img_flow if img_flow else ""]]
+        hdr_tbl = Table(hdr_data, colWidths=[None, 100])
+        hdr_tbl.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('ALIGN', (0,0), (0,0), 'LEFT'),
+            ('ALIGN', (1,0), (1,0), 'RIGHT'),
+            # no borders
+        ]))
+        elements.append(hdr_tbl)
+        elements.append(Spacer(1, 12))
+
+    # Content: list-style or tabular
+    if list_style:
+        # Render each row as a list of field: value items
+        cols_to_show = list(df.columns)
+        for idx, (_, row) in enumerate(df.iterrows(), start=1):
+            # Row header
+            elements.append(Paragraph("Data Rekam", styles['Heading4']))
+            # Two-column table for field/value pairs for cleaner alignment
+            data = []
+            for c in cols_to_show:
+                label = c.replace('_', ' ').title()
+                value = fmt(row[c])
+                data.append([Paragraph(f"<b>{label}</b>", styles['Normal']), Paragraph(value, styles['Normal'])])
+            tbl = Table(data, colWidths=[120, None])
+            tbl.setStyle(TableStyle([
+                ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                ('FONTSIZE', (0,0), (-1,-1), 9),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ]))
+            elements.append(tbl)
+            elements.append(Spacer(1, 10))
+    else:
+        # Chunk columns into multiple tables to render downward if too many columns
+        all_cols = list(df.columns)
+        chunks = [all_cols[i:i+max_cols_per_table] for i in range(0, len(all_cols), max_cols_per_table)]
+        for idx, cols in enumerate(chunks, start=1):
+            # Title for each chunk
+            elements.append(Paragraph(f"Data Bagian {idx}", styles['Heading4']))
+            data = [[c.replace('_', ' ').title() for c in cols]]
+            for _, row in df[cols].iterrows():
+                data.append([fmt(row[c]) for c in cols])
+            table = Table(data, repeatRows=1)
+            style = TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f0f0f0')),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.HexColor('#333333')),
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0,0), (-1,0), 10),
+                ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+                ('GRID', (0,0), (-1,-1), 0.25, colors.HexColor('#cccccc')),
+                ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#fbfbfb')]),
+                ('FONTSIZE', (0,1), (-1,-1), 9),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ])
+            table.setStyle(style)
+            elements.append(table)
+            elements.append(Spacer(1, 8))
+
+    doc.build(elements)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+# -----------------------------
 # Generate QR ZIP Bytes (for nurse_upload_checkup)
 # -----------------------------
+
 def generate_qr_zip_bytes():
     """
     Placeholder: generate a zip containing QR code files.

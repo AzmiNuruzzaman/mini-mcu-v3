@@ -27,3 +27,6 @@ whitenoise
 
 # WSGI server for production
 gunicorn
+
+# PDF generation
+reportlab

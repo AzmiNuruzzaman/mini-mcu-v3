@@ -1,0 +1,1 @@
+ALTER TABLE public.karyawan ADD COLUMN IF NOT EXISTS "umur" INTEGER;
