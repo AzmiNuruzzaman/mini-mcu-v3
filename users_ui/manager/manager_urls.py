@@ -37,6 +37,7 @@ urlpatterns = [
     path("upload-master-karyawan/", manager_views.upload_master_karyawan_xls, name="upload_master_karyawan_xls"),
     path("upload-medical-checkup/", manager_views.upload_medical_checkup_xls, name="upload_medical_checkup_xls"),
     path("export-checkup-data/", manager_views.export_checkup_data_excel, name="export_checkup_data"),
+    path("export-master-karyawan/", manager_views.export_master_karyawan_excel, name="export_master_karyawan"),
 
     # ===============================
     # UPLOAD LOG MANAGEMENT
@@ -52,6 +53,7 @@ urlpatterns = [
     path("reset-all-checkups/", manager_views.reset_all_checkups, name="reset_all_checkups"),
     path("reset-all-karyawan/", manager_views.reset_all_karyawan, name="reset_all_karyawan"),
     path("manage-lokasi/", manager_views.manage_lokasi, name="manage_lokasi"),
+    path("lokasi/add/", manager_views.add_lokasi, name="add_lokasi"),
     path("delete-karyawan/<str:uid>/", manager_views.delete_karyawan, name="delete_karyawan"),
 
 

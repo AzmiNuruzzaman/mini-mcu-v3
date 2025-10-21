@@ -13,7 +13,7 @@ from datetime import datetime
 
 # --- Expected schema for checkups table ---
 CHECKUP_COLUMNS = [
-    "tanggal_checkup", "tinggi", "berat", "bmi", "lingkar_perut",
+    "tanggal_checkup", "lingkar_perut",
     "gula_darah_puasa", "cholesterol", "asam_urat", "status",
     "tanggal_lahir", "umur", "gula_darah_sewaktu", "lokasi"
 ]
@@ -39,18 +39,43 @@ def _round_numeric_cols(df: pd.DataFrame, cols=None, decimals=2) -> pd.DataFrame
 # -------------------------
 def get_employees() -> pd.DataFrame:
     """Return all employees as a DataFrame with properly formatted dates."""
-    qs = core_models.Karyawan.objects.all().values("uid", "nama", "jabatan", "lokasi", "tanggal_lahir")
+    qs = core_models.Karyawan.objects.all().values(
+        "uid", "nama", "jabatan", "lokasi", "tanggal_lahir", "tanggal_MCU", "expired_MCU", "derajat_kesehatan",
+        # Include anthropometric master data for dashboard display
+        "tinggi", "berat", "bmi",
+        # BMI category label from XLS
+        "bmi_category"
+    )
     df = pd.DataFrame(list(qs))
+
+    # Ensure umur column exists for templates, but do not compute it
+    if "umur" not in df.columns:
+        df["umur"] = None
     
-    # Format tanggal_lahir as YYYY-MM-DD string if present
-    if not df.empty and 'tanggal_lahir' in df.columns:
-        df['tanggal_lahir'] = pd.to_datetime(df['tanggal_lahir']).dt.strftime('%Y-%m-%d')
+    if not df.empty:
+        # Round anthropometric numeric columns for clean display
+        df = _round_numeric_cols(df, cols=["tinggi", "berat", "bmi"])  # safe: only rounds if columns exist
+
+        # Do NOT auto-compute umur. Use value from DB/XLS as-is.
+        # Format date fields as YYYY-MM-DD strings if present
+        for col in ["tanggal_lahir", "tanggal_MCU", "expired_MCU"]:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors="coerce").dt.strftime('%Y-%m-%d')
     
     return df
 
+
 def get_employee_by_uid(uid):
-    obj = core_models.Karyawan.objects.filter(uid=uid).first()
-    return obj.__dict__ if obj else None
+    """Safely fetch a single employee by UID using explicit column selection."""
+    obj = core_models.Karyawan.objects.filter(uid=uid).values(
+        "uid", "nama", "jabatan", "lokasi", "tanggal_lahir", "tanggal_MCU", "expired_MCU", "derajat_kesehatan",
+        # Include anthropometric master data for profile/edit views
+        "tinggi", "berat", "bmi", "bmi_category"
+    ).first()
+    if obj:
+        # Maintain key presence for templates; do not compute umur
+        obj["umur"] = obj.get("umur", None)
+    return obj if obj else None
 
 def add_employee_if_missing(username, jabatan, lokasi, tanggal_lahir=None, batch_id=None):
     """
@@ -96,29 +121,21 @@ def get_karyawan_uid_bulk(df: pd.DataFrame):
 # Checkups
 # -------------------------
 def load_checkups():
-    qs = core_models.Checkup.objects.select_related("uid").all().order_by("-tanggal_checkup")
-    records = []
-    for c in qs:
-        records.append({
-            "checkup_id": c.checkup_id,
-            "uid": c.uid_id,
-            "tanggal_checkup": c.tanggal_checkup,
-            "tanggal_lahir": c.tanggal_lahir,
-            "umur": c.umur,
-            "tinggi": c.tinggi,
-            "berat": c.berat,
-            "lingkar_perut": c.lingkar_perut,
-            "bmi": c.bmi,
-            "gula_darah_puasa": c.gula_darah_puasa,
-            "gula_darah_sewaktu": c.gula_darah_sewaktu,
-            "cholesterol": c.cholesterol,
-            "asam_urat": c.asam_urat,
-            "derajat_kesehatan": c.derajat_kesehatan,
-            "nama": c.uid.nama,
-            "jabatan": c.uid.jabatan,
-            "lokasi": c.uid.lokasi,
-        })
-    df = pd.DataFrame(records)
+    qs = core_models.Checkup.objects.select_related("uid").order_by("-tanggal_checkup").values(
+        "checkup_id", "uid_id", "tanggal_checkup", "tanggal_lahir", "umur",
+        "tinggi", "berat", "lingkar_perut", "bmi",
+        "gula_darah_puasa", "gula_darah_sewaktu", "cholesterol", "asam_urat",
+        "tekanan_darah", "derajat_kesehatan", "lokasi",
+        "uid__nama", "uid__jabatan", "uid__lokasi"
+    )
+    df = pd.DataFrame(list(qs))
+    # Normalize related field names
+    df = df.rename(columns={
+        "uid__nama": "nama",
+        "uid__jabatan": "jabatan",
+        "uid__lokasi": "lokasi",
+        "uid_id": "uid",
+    })
     df = _round_numeric_cols(df)
     for col in ["tanggal_checkup", "tanggal_lahir"]:
         if col in df.columns:
@@ -137,7 +154,7 @@ def save_checkups(df: pd.DataFrame):
 def save_uploaded_checkups(df: pd.DataFrame):
     required_cols = [
         "nama", "jabatan", "lokasi", "tanggal_checkup", "tanggal_lahir",
-        "tinggi", "berat", "lingkar_perut", "bmi", "umur",
+        "lingkar_perut", "umur",
         "gula_darah_puasa", "gula_darah_sewaktu", "cholesterol", "asam_urat"
     ]
     missing_cols = [col for col in required_cols if col not in df.columns]

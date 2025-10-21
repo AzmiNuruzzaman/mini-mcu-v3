@@ -16,6 +16,7 @@ urlpatterns = [
     path('upload/', nurse_views.nurse_upload_checkup, name='upload_checkup'),
     path('upload-export/', nurse_views.nurse_upload_export, name='upload_export'),
     path('download-checkup-template/', nurse_views.nurse_download_checkup_template, name='download_checkup_template'),
+    path('export-checkup-data/', nurse_views.nurse_export_checkup_data, name='export_checkup_data'),
     path('export-karyawan-data/', nurse_views.nurse_export_karyawan_data, name='export_karyawan_data'),
 
     # ---------------- QR Codes ----------------

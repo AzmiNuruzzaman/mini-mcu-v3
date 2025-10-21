@@ -43,7 +43,7 @@
       </a>
     </li>
 
-    <!-- Edit Karyawan Data -->
+    <!-- Edit Data Checkup -->
     <li>
       <a href="{% if menu_items %}{% for item in menu_items %}{% if item.key == 'edit_karyawan' %}{{ item.url }}{% endif %}{% endfor %}{% else %}#{% endif %}"
          class="flex items-center gap-3 py-3 px-4 rounded-lg transition-all cursor-pointer
@@ -52,7 +52,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M5 12h14"/>
         </svg>
-        <span class="text-white font-medium">Edit Karyawan Data</span>
+        <span class="text-white font-medium">Edit Data Checkup</span>
       </a>
     </li>
 

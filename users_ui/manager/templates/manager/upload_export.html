@@ -60,6 +60,32 @@
               Upload Master Karyawan
             </button>
           </form>
+
+          {% if preview_cols and preview_rows %}
+          <div class="mt-6">
+            <h4 class="text-md font-semibold mb-2">Preview Data</h4>
+            <div class="overflow-x-auto border border-gray-200 rounded">
+              <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead class="bg-gray-50">
+                  <tr>
+                    {% for col in preview_cols %}
+                      <th class="px-3 py-2 text-left font-medium text-gray-700">{{ col|title }}</th>
+                    {% endfor %}
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                  {% for row in preview_rows %}
+                    <tr class="hover:bg-gray-50">
+                      {% for cell in row %}
+                        <td class="px-3 py-2 text-gray-800">{{ cell }}</td>
+                      {% endfor %}
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {% endif %}
         </section>
       {% elif is_active == 'upload_checkup' %}
         <!-- Upload Medical Checkup -->
@@ -85,15 +111,21 @@
         <!-- Export Data -->
         <section>
           <h3 class="text-lg font-semibold mb-4">Export Data</h3>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div class="bg-gray-50 p-6 rounded-lg">
-              <div class="text-xs text-gray-600 mb-2">download semua data checkup</div>
+              <div class="text-xs text-gray-600 mb-2">download semua data checkup (sesuai dashboard)</div>
               <a href="{% url 'manager:export_checkup_data' %}" class="inline-block bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
                 Export All Checkup Data
               </a>
             </div>
             <div class="bg-gray-50 p-6 rounded-lg">
-              <p class="text-sm text-gray-700 mb-3">Download Excel template for recording medical checkup data.</p>
+              <div class="text-xs text-gray-600 mb-2">download master data karyawan (schema sama seperti upload master)</div>
+              <a href="{% url 'manager:export_master_karyawan' %}" class="inline-block bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
+                Export Master Karyawan
+              </a>
+            </div>
+            <div class="bg-gray-50 p-6 rounded-lg">
+              <p class="text-sm text-gray-700 mb-3">Download Excel template untuk medical checkup.</p>
               <a href="{% url 'manager:download_checkup_template' %}" class="inline-block bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
                 📥 Download Checkup Template
               </a>

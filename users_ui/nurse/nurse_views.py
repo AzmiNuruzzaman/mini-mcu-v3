@@ -30,7 +30,7 @@ from core.helpers import (
 from core import checkup_uploader
 from users_ui.qr.qr_views import qr_detail_view, qr_bulk_download_view
 from users_ui.qr.qr_utils import generate_qr_bytes
-from utils.export_utils import generate_karyawan_template_excel
+from utils.export_utils import generate_karyawan_template_excel, export_checkup_data_excel as build_checkup_excel
 
 # Plotly for grafik replication
 import plotly.graph_objects as go
@@ -73,6 +73,7 @@ def nurse_index(request):
         "jabatan": request.GET.get("jabatan", ""),
         "lokasi": request.GET.get("lokasi", ""),
         "status": request.GET.get("status", ""),
+        "expiry": request.GET.get("expiry", ""),
     }
 
     # Apply filters
@@ -86,6 +87,29 @@ def nurse_index(request):
         df = df[df["lokasi"] == filters["lokasi"]]
     if filters["status"]:
         df = df[df["status"] == filters["status"]]
+
+    # Compute MCU expiry flags for styling (expired = red, within 60 days = yellow)
+    try:
+        if 'expired_MCU' in df.columns:
+            expired_dt = pd.to_datetime(df['expired_MCU'], format='%d/%m/%y', errors='coerce')
+            today = pd.Timestamp.today().normalize()
+            warn_deadline = today + pd.Timedelta(days=60)
+            df['mcu_is_expired'] = expired_dt.notna() & (expired_dt < today)
+            df['mcu_is_warning'] = expired_dt.notna() & (expired_dt >= today) & (expired_dt <= warn_deadline)
+        else:
+            df['mcu_is_expired'] = False
+            df['mcu_is_warning'] = False
+    except Exception:
+        df['mcu_is_expired'] = False
+        df['mcu_is_warning'] = False
+
+    # Apply expiry filter if requested
+    if filters.get("expiry"):
+        expiry_val = str(filters["expiry"]).lower()
+        if expiry_val == "expired":
+            df = df[df["mcu_is_expired"]]
+        elif expiry_val in ("warning", "almost", "almost_expired", "almost-expired"):
+            df = df[df["mcu_is_warning"]]
 
     # Build available dropdown options from filtered/normalized data
     jabatan_map = {}
@@ -428,7 +452,13 @@ def nurse_karyawan_detail(request, uid):
         # Fallback to raw object/dict
         try:
             emp_dict = {}
-            for key in ["uid", "nama", "jabatan", "lokasi", "tanggal_lahir"]:
+            # Include broader set of fields to mirror manager's profile display
+            for key in [
+                "uid", "nama", "jabatan", "lokasi",
+                "tanggal_lahir", "tanggal_MCU", "expired_MCU",
+                "derajat_kesehatan", "berat", "tinggi", "bmi", "bmi_category",
+                "lingkar_perut", "kontak_darurat"
+            ]:
                 emp_dict[key] = employee_raw.get(key) if isinstance(employee_raw, dict) else getattr(employee_raw, key, None)
             employee_clean = emp_dict
         except Exception:
@@ -534,28 +564,21 @@ def nurse_karyawan_detail(request, uid):
             except Exception:
                 emp_tanggal_lahir = None
 
-            from core.helpers import compute_status as _compute_status
-            for _, row in df_hist2.iterrows():
-                # Numeric coercion
-                tinggi_n = pd.to_numeric(row.get('tinggi', None), errors='coerce')
-                berat_n = pd.to_numeric(row.get('berat', None), errors='coerce')
-                bmi_n = pd.to_numeric(row.get('bmi', None), errors='coerce')
-                lp_n = pd.to_numeric(row.get('lingkar_perut', None), errors='coerce')
-                gdp_n = pd.to_numeric(row.get('gula_darah_puasa', None), errors='coerce')
-                gds_n = pd.to_numeric(row.get('gula_darah_sewaktu', None), errors='coerce')
-                chol_n = pd.to_numeric(row.get('cholesterol', None), errors='coerce')
-                asam_n = pd.to_numeric(row.get('asam_urat', None), errors='coerce')
-
-                # Age: prefer row['umur'], else compute from birthdate and checkup date
-                umur_val = row.get('umur', None)
-                try:
-                    if pd.isna(umur_val):
-                        tl_dt = pd.to_datetime((employee_clean or {}).get('tanggal_lahir'), errors='coerce')
-                        tc_dt = pd.to_datetime(row.get('tanggal_checkup'), errors='coerce')
-                        if pd.notna(tl_dt) and pd.notna(tc_dt):
-                            umur_val = int((tc_dt.date() - tl_dt.date()).days // 365)
-                except Exception:
-                    pass
+            # Format MCU dates from employee master data (pass-through, no computation)
+            emp_tanggal_mcu = None
+            emp_expired_mcu = None
+            try:
+                mcu_raw = (employee_clean or {}).get('tanggal_MCU')
+                mcu_dt = pd.to_datetime(mcu_raw, errors='coerce')
+                emp_tanggal_mcu = mcu_dt.strftime('%d/%m/%y') if pd.notna(mcu_dt) else None
+            except Exception:
+                pass
+            try:
+                exp_raw = (employee_clean or {}).get('expired_MCU')
+                exp_dt = pd.to_datetime(exp_raw, errors='coerce')
+                emp_expired_mcu = exp_dt.strftime('%d/%m/%y') if pd.notna(exp_dt) else None
+            except Exception:
+                pass
 
                 # Date formatting
                 tc_dt = pd.to_datetime(row.get('tanggal_checkup'), errors='coerce')
@@ -588,12 +611,28 @@ def nurse_karyawan_detail(request, uid):
                     'asam_urat': float(asam_n) if pd.notna(asam_n) else None,
                     'tekanan_darah': row.get('tekanan_darah', None),
                     'derajat_kesehatan': str(row.get('derajat_kesehatan')) if row.get('derajat_kesehatan') is not None else None,
-                    'tanggal_MCU': None,
-                    'expired_MCU': None,
+                    'tanggal_MCU': emp_tanggal_mcu,
+                    'expired_MCU': emp_expired_mcu,
                     'status': status_val,
                 })
     except Exception:
         history_dashboard = []
+
+    # Compute MCU expiry estimate (days until/since expiration)
+    mcu_expiry_estimate = None
+    try:
+        exp_raw = (employee_clean or {}).get('expired_MCU')
+        exp_dt = pd.to_datetime(exp_raw, errors='coerce')
+        if pd.notna(exp_dt):
+            delta_days = (exp_dt.date() - datetime.today().date()).days
+            if delta_days > 0:
+                mcu_expiry_estimate = f"{delta_days} hari lagi"
+            elif delta_days == 0:
+                mcu_expiry_estimate = "Hari ini"
+            else:
+                mcu_expiry_estimate = f"Expired {abs(delta_days)} hari lalu"
+    except Exception:
+        pass
 
     return render(request, "nurse/edit_karyawan.html", {
         "employee": employee_clean or {},
@@ -604,8 +643,9 @@ def nurse_karyawan_detail(request, uid):
         "history_dashboard": history_dashboard,
         "active_submenu": active_submenu,
         "active_subtab": active_subtab,
-        "active_menu_label": "Edit Karyawan",
+        "active_menu_label": "Edit Data Checkup",
         "view_only": True,
+        "mcu_expiry_estimate": mcu_expiry_estimate,
     })
 
 
@@ -626,43 +666,20 @@ def nurse_save_medical_checkup(request, uid):
         gula_darah_sewaktu = request.POST.get("gula_darah_sewaktu")
         cholesterol = request.POST.get("cholesterol")
         asam_urat = request.POST.get("asam_urat")
+        tekanan_darah = request.POST.get("tekanan_darah")
         derajat_kesehatan = request.POST.get("derajat_kesehatan")
 
-        # Compute BMI server-side if not provided
-        bmi_value = None
-        try:
-            if berat and tinggi:
-                berat_f = float(berat)
-                tinggi_cm = float(tinggi)
-                if berat_f > 0 and tinggi_cm > 0:
-                    tinggi_m = tinggi_cm / 100.0
-                    bmi_value = round(berat_f / (tinggi_m ** 2), 2)
-        except Exception:
-            bmi_value = None
+        # BMI is captured as provided; no auto-calculation
+        bmi_value = float(bmi) if bmi else None
 
         # Determine checkup date
         tanggal_checkup_date = pd.to_datetime(tanggal_checkup).date() if tanggal_checkup else datetime.today().date()
 
-        # Auto-calculate umur if not provided, using employee birthdate
-        umur_value = None
-        if umur:
-            try:
-                umur_value = int(umur)
-            except Exception:
-                umur_value = None
-        else:
-            try:
-                from core.queries import get_employee_by_uid
-                emp = get_employee_by_uid(uid)
-                birth_raw = emp.get("tanggal_lahir") if isinstance(emp, dict) else getattr(emp, "tanggal_lahir", None)
-                birth_dt = pd.to_datetime(birth_raw, errors="coerce") if birth_raw else None
-                birth_date = birth_dt.date() if pd.notna(birth_dt) else None
-                if birth_date and tanggal_checkup_date:
-                    umur_value = tanggal_checkup_date.year - birth_date.year - (
-                        (tanggal_checkup_date.month, tanggal_checkup_date.day) < (birth_date.month, birth_date.day)
-                    )
-            except Exception:
-                umur_value = None
+        # Umur is captured as provided; no auto-calculation
+        try:
+            umur_value = int(umur) if umur else None
+        except Exception:
+            umur_value = None
 
         record = {
             "uid": uid,
@@ -676,6 +693,7 @@ def nurse_save_medical_checkup(request, uid):
             "gula_darah_sewaktu": float(gula_darah_sewaktu) if gula_darah_sewaktu else None,
             "cholesterol": float(cholesterol) if cholesterol else None,
             "asam_urat": float(asam_urat) if asam_urat else None,
+            "tekanan_darah": tekanan_darah.strip() if tekanan_darah else None,
             "derajat_kesehatan": derajat_kesehatan.strip() if derajat_kesehatan else None,
         }
 
@@ -705,6 +723,28 @@ def nurse_download_checkup_template(request):
         return redirect(reverse("nurse:upload_export"))
 
 @require_http_methods(["GET"]) 
+def nurse_export_checkup_data(request):
+    """Export all medical checkup data (dashboard-like) to Excel for nurse."""
+    if not request.session.get("authenticated") or request.session.get("user_role") != "Tenaga Kesehatan":
+        return redirect("accounts:login")
+    try:
+        df = get_dashboard_checkup_data()
+        if df is None or df.empty:
+            request.session["warning_message"] = "belum ada check up data, silahkan unggah terlebih dahulu"
+            return redirect(reverse("nurse:upload_export") + "?submenu=export_data")
+
+        excel_bytes = build_checkup_excel(df)
+        response = HttpResponse(
+            excel_bytes,
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = 'attachment; filename="medical_checkup_data.xlsx"'
+        return response
+    except Exception as e:
+        request.session["error_message"] = f"Gagal mengekspor data checkup: {e}"
+        return redirect(reverse("nurse:upload_export") + "?submenu=export_data")
+
+@require_http_methods(["GET"])
 def nurse_export_karyawan_data(request):
     """Export all employee master data to Excel (available to nurse)."""
     if not request.session.get("authenticated") or request.session.get("user_role") != "Tenaga Kesehatan":

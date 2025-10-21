@@ -72,11 +72,13 @@
 <body class="bg-gray-100">
     <div class="flex h-screen">
         <!-- Sidebar -->
+        {% if role_title or not view_only %}
         <div id="app-sidebar" class="w-[310px] bg-primary flex-shrink-0 transition-all duration-200">
             {% block sidebar %}
                 {% include "shared/shared_sidebar.html" %}
             {% endblock %}
         </div>
+        {% endif %}
 
         <!-- Main Content -->
         <div class="flex-1 overflow-hidden">
@@ -84,17 +86,63 @@
                 <!-- Header -->
                 <header class="bg-white border-b border-gray-200 px-8 py-4 flex justify-between items-center">
                     <div class="flex items-center gap-3">
+                        {% if role_title or not view_only %}
                         <button id="sidebarToggle" type="button" aria-label="Toggle sidebar"
                                 class="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary">
                             <i class="fas fa-bars"></i>
                             <span class="hidden sm:inline">Menu</span>
                         </button>
+                        {% endif %}
                         <div>
                             <h1 class="text-2xl font-bold text-gray-800">{% if role_title %}{{ role_title|upper }}{% elif view_only %}KARYAWAN{% else %}MANAGER{% endif %}</h1>
                             <div class="h-1 w-12 bg-primary mt-2"></div>
                         </div>
                     </div>
-                    <img src="{% static 'images/logo.png' %}" alt="Logo" class="h-24">
+                    <div class="flex items-center gap-6">
+                        <img src="{% static 'images/logo.png' %}" alt="Logo" class="h-24">
+                        {% if role_title == 'Manager' or role_title == 'Nurse' %}
+                        <details class="relative">
+                            <summary class="list-none cursor-pointer relative flex items-center">
+                                <i class="fas fa-bell text-2xl text-gray-600 hover:text-gray-800"></i>
+                                {% if mcu_alerts.total|default:0 > 0 %}
+                                <span class="absolute -top-1 -right-2 bg-red-600 text-white text-xs rounded-full px-1.5 py-0.5">{{ mcu_alerts.total }}</span>
+                                {% endif %}
+                            </summary>
+                            <div class="absolute right-0 mt-3 w-96 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                                <div class="p-4 border-b flex items-center gap-2">
+                                    <i class="fas fa-calendar-exclamation text-yellow-600"></i>
+                                    <span class="font-semibold">Peringatan MCU</span>
+                                    <span class="text-xs text-gray-500 ml-auto">
+                                        {% if mcu_alerts %}Expired: {{ mcu_alerts.expired }} • Soon: {{ mcu_alerts.due_soon }}{% endif %}
+                                    </span>
+                                </div>
+                                <ul class="max-h-64 overflow-auto divide-y">
+                                    {% if mcu_alert_items and mcu_alert_items|length > 0 %}
+                                        {% for item in mcu_alert_items %}
+                                            <li class="p-3 hover:bg-gray-50">
+                                                <a {% if item.url %}href="{{ item.url }}"{% else %}href="#"{% endif %} class="flex items-center gap-3">
+                                                    {% if item.type == 'expired' %}
+                                                        <span class="text-red-600"><i class="fas fa-circle-exclamation"></i></span>
+                                                    {% else %}
+                                                        <span class="text-yellow-600"><i class="fas fa-triangle-exclamation"></i></span>
+                                                    {% endif %}
+                                                    <div class="flex-1">
+                                                        <div class="text-sm font-medium text-gray-900">{{ item.title }}</div>
+                                                        <div class="text-xs text-gray-600">
+                                                            Expired: {{ item.expired_at|default:'-' }}{% if item.days_left %} • {{ item.days_left }} hari lagi{% endif %}
+                                                        </div>
+                                                    </div>
+                                                </a>
+                                            </li>
+                                        {% endfor %}
+                                    {% else %}
+                                        <li class="p-4 text-sm text-gray-500">Tidak ada peringatan saat ini.</li>
+                                    {% endif %}
+                                </ul>
+                            </div>
+                        </details>
+                        {% endif %}
+                    </div>
                 </header>
 
                 <!-- Main Content Area -->

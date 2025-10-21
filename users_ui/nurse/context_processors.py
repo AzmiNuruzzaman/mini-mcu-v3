@@ -1,6 +1,8 @@
 # users_ui/nurse/context_processors.py
 from django.urls import reverse
 from core.queries import get_employees
+import pandas as pd
+from core.helpers import get_mcu_expiry_alerts
 
 
 def nurse_menu(request):
@@ -32,7 +34,7 @@ def nurse_menu(request):
             'key': 'upload_export'
         },
         {
-            'name': 'Edit Karyawan Data',
+            'name': 'Edit Data Checkup',
             'url': reverse('nurse:karyawan_detail', kwargs={'uid': default_uid}) if default_uid else '#',
             'icon': 'edit',
             'key': 'edit_karyawan'
@@ -131,7 +133,7 @@ def manager_menu(request):
             'key': 'hapus_data_karyawan'
         },
         {
-            'name': 'Edit Karyawan Data',
+            'name': 'Edit Master Data',
             'url': reverse('manager:edit_karyawan', kwargs={'uid': default_uid}) if default_uid else '#',
             'icon': 'edit',
             'key': 'edit_karyawan'
@@ -164,4 +166,67 @@ def manager_menu(request):
         'menu_items': menu_items,
         'active_menu': active_key,           # used by shared sidebar for highlighting
         'active_menu_label': active_label,   # used by templates for display titles
+    }
+
+
+def nurse_notifications(request):
+    """Provide MCU expiry alerts and items to nurse views (60-day window)."""
+    try:
+        path = getattr(request, 'path', '')
+        if not str(path).startswith('/nurse/'):
+            return {}
+    except Exception:
+        return {}
+
+    # Aggregate counts (expired, due soon)
+    try:
+        alerts = get_mcu_expiry_alerts(window_days=60)
+    except Exception:
+        alerts = {"expired": 0, "due_soon": 0, "total": 0}
+
+    items = []
+    try:
+        df = get_employees()
+        if df is not None and not df.empty and 'expired_MCU' in df.columns:
+            exp_series = pd.to_datetime(df['expired_MCU'], errors='coerce')
+            today = pd.Timestamp.today().normalize()
+            window_end = today + pd.Timedelta(days=60)
+
+            expired_rows = df[exp_series.notna() & (exp_series < today)].copy()
+            due_rows = df[exp_series.notna() & (exp_series >= today) & (exp_series <= window_end)].copy()
+
+            if not expired_rows.empty:
+                expired_rows = expired_rows.sort_values(by='expired_MCU')
+                for _, r in expired_rows.iterrows():
+                    items.append({
+                        "type": "expired",
+                        "title": f"{r.get('nama')} ({r.get('jabatan')})",
+                        "expired_at": r.get('expired_MCU') or "-",
+                        "days_left": None,
+                        "uid": str(r.get('uid')) if r.get('uid') else None,
+                        "url": reverse('nurse:karyawan_detail', kwargs={'uid': str(r.get('uid'))}) if r.get('uid') else None,
+                    })
+            if not due_rows.empty:
+                due_rows = due_rows.sort_values(by='expired_MCU')
+                for _, r in due_rows.iterrows():
+                    exp_dt = pd.to_datetime(r.get('expired_MCU'), errors='coerce')
+                    days_left = int((exp_dt.date() - today.date()).days) if pd.notna(exp_dt) else None
+                    items.append({
+                        "type": "due_soon",
+                        "title": f"{r.get('nama')} ({r.get('jabatan')})",
+                        "expired_at": r.get('expired_MCU') or "-",
+                        "days_left": days_left,
+                        "uid": str(r.get('uid')) if r.get('uid') else None,
+                        "url": reverse('nurse:karyawan_detail', kwargs={'uid': str(r.get('uid'))}) if r.get('uid') else None,
+                    })
+
+            if len(items) > 12:
+                items = items[:12]
+    except Exception:
+        pass
+
+    return {
+        "mcu_alerts": alerts,
+        "mcu_alert_items": items,
+        "mcu_alert_window_days": 60,
     }

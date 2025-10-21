@@ -11,7 +11,7 @@ import base64
 from users_ui.qr.qr_utils import generate_qr_bytes
 import uuid
 import os
-from utils.validators import safe_date, validate_lokasi, normalize_string
+from utils.validators import safe_date, validate_lokasi, normalize_string, safe_float
 
 from core.queries import (
     get_users,
@@ -619,17 +619,33 @@ def upload_master_karyawan_xls(request):
         {"key": "qr", "name": "QR Codes", "url": reverse("manager:qr_codes"), "icon": "qrcode"},
         {"key": "data", "name": "Upload & Export", "url": reverse("manager:upload_export"), "icon": "upload"},
         {"key": "hapus_data_karyawan", "name": "Hapus Data Karyawan", "url": reverse("manager:hapus_data_karyawan"), "icon": "database"},
-        {"key": "edit_karyawan", "name": "Edit Karyawan Data", "url": reverse("manager:edit_karyawan", kwargs={'uid': default_uid}) if default_uid else '#', "icon": "edit"},
+        {"key": "edit_karyawan", "name": "Edit Master Data", "url": reverse("manager:edit_karyawan", kwargs={'uid': default_uid}) if default_uid else '#', "icon": "edit"},
     ]
     
     if request.method == "POST" and request.FILES.get("file"):
         try:
             # Parse and save master karyawan data using core.excel_parser
             result = excel_parser.parse_master_karyawan(request.FILES["file"])
+            # Build preview DataFrame without changing logic or computing BMI/umur
+            preview_df = excel_parser.parse_master_preview(request.FILES["file"]) 
+
+            preview_df = sanitize_df_for_display(preview_df)
+            preview_cols = list(preview_df.columns)
+            # Build a matrix for template rendering without custom filters
+            preview_rows = [[str(row.get(col, "")) for col in preview_cols] for _, row in preview_df.iterrows()]
             request.session['success_message'] = f"{result['inserted']} karyawan berhasil diupload, {result['skipped']} dilewati."
+            return render(request, "manager/upload_export.html", {
+                "active_menu": "data",
+                "menu_items": menu_items,
+                "preview_cols": preview_cols,
+                "preview_rows": preview_rows,
+            })
         except Exception as e:
             request.session['error_message'] = f"Upload failed: {e}"
-        return redirect(reverse("manager:dashboard"))
+            return render(request, "manager/upload_export.html", {
+                "active_menu": "data",
+                "menu_items": menu_items,
+            })
     
     return render(request, "manager/upload_export.html", {
         "active_menu": "data",
@@ -651,7 +667,7 @@ def upload_medical_checkup_xls(request):
         {"key": "qr", "name": "QR Codes", "url": reverse("manager:qr_codes"), "icon": "qrcode"},
         {"key": "data", "name": "Upload & Export", "url": reverse("manager:upload_export"), "icon": "upload"},
         {"key": "hapus_data_karyawan", "name": "Hapus Data Karyawan", "url": reverse("manager:hapus_data_karyawan"), "icon": "database"},
-        {"key": "edit_karyawan", "name": "Edit Karyawan Data", "url": reverse("manager:edit_karyawan", kwargs={'uid': default_uid}) if default_uid else '#', "icon": "edit"},
+        {"key": "edit_karyawan", "name": "Edit Master Data", "url": reverse("manager:edit_karyawan", kwargs={'uid': default_uid}) if default_uid else '#', "icon": "edit"},
     ]
     
     if request.method == "POST" and request.FILES.get("file"):
@@ -665,10 +681,13 @@ def upload_medical_checkup_xls(request):
                 for chunk in uploaded_file.chunks():
                     dest.write(chunk)
 
+            # Parse medical checkup XLS (anthropometrics excluded; handled in master)
             result = checkup_uploader.parse_checkup_xls(save_path)
             # Write log entry for this upload
             write_checkup_upload_log(original_name, result)
-            request.session['success_message'] = "Excel berhasil di upload!"
+            inserted = int(result.get('inserted', 0)) if isinstance(result, dict) else 0
+            skipped = len(result.get('skipped', [])) if isinstance(result, dict) else 0
+            request.session['success_message'] = f"Excel berhasil di upload! {inserted} checkup disimpan, {skipped} baris dilewati."
         except Exception as e:
             request.session['error_message'] = f"Upload failed: {e}"
         return redirect(reverse("manager:dashboard"))
@@ -1088,22 +1107,38 @@ def employee_profile(request, uid):
             active_submenu = "data_karyawan"
             active_subtab = "profile"
 
-    # Validate subtab under data_karyawan (allow profile, edit_data, tambah)
-    if active_submenu == "data_karyawan" and active_subtab not in ["profile", "edit_data", "tambah"]:
+    # Validate subtab under data_karyawan (allow profile, edit_data, edit_checkup, tambah, lokasi)
+    if active_submenu == "data_karyawan" and active_subtab not in ["profile", "edit_data", "edit_checkup", "tambah", "lokasi"]:
         active_subtab = "profile"
 
-    # Handle V2 Edit Karyawan Data submission (manager only)
+    # Handle V2 Edit Master Data submission (manager only)
     if request.method == "POST" and active_submenu == "data_karyawan" and active_subtab == "edit_data":
         nama = (request.POST.get("nama") or "").strip()
         jabatan = (request.POST.get("jabatan") or "").strip()
         lokasi = (request.POST.get("lokasi") or "").strip()
-        tanggal_lahir_raw = request.POST.get("tanggal_lahir")
-        tanggal_lahir = safe_date(tanggal_lahir_raw)
+
+        tanggal_lahir = safe_date(request.POST.get("tanggal_lahir"))
+        tanggal_MCU = safe_date(request.POST.get("tanggal_MCU"))
+        expired_MCU = safe_date(request.POST.get("expired_MCU"))
+
+        derajat_kesehatan = request.POST.get("derajat_kesehatan")
+        if derajat_kesehatan is not None:
+            derajat_kesehatan = str(derajat_kesehatan).strip().upper()
+            derajat_kesehatan = derajat_kesehatan.replace(" ", "")
+
+        tinggi = safe_float(request.POST.get("tinggi"))
+        berat = safe_float(request.POST.get("berat"))
+        bmi = safe_float(request.POST.get("bmi"))
+
+        bmi_category = (request.POST.get("bmi_category") or "").strip()
 
         # Validate lokasi if provided
         if lokasi and not validate_lokasi(lokasi):
             request.session['error_message'] = "Lokasi tidak valid. Pilih lokasi yang tersedia."
             return redirect(reverse("manager:edit_karyawan", kwargs={'uid': uid}) + "?submenu=data_karyawan&subtab=edit_data")
+
+        # Do NOT auto-compute BMI. Respect XLS/manual value as-is.
+        # Leave bmi as provided; if None, it will not be saved/changed.
 
         # Build update payload only with provided non-empty fields (V2 logic)
         row = {"uid": uid}
@@ -1115,12 +1150,26 @@ def employee_profile(request, uid):
             row["lokasi"] = lokasi
         if tanggal_lahir is not None:
             row["tanggal_lahir"] = tanggal_lahir
+        if tanggal_MCU is not None:
+            row["tanggal_MCU"] = tanggal_MCU
+        if expired_MCU is not None:
+            row["expired_MCU"] = expired_MCU
+        if derajat_kesehatan:
+            row["derajat_kesehatan"] = derajat_kesehatan
+        if tinggi is not None:
+            row["tinggi"] = tinggi
+        if berat is not None:
+            row["berat"] = berat
+        if bmi is not None:
+            row["bmi"] = bmi
+        if bmi_category:
+            row["bmi_category"] = bmi_category
 
         try:
             df_updates = pd.DataFrame([row])
             updated_count = save_manual_karyawan_edits(df_updates)
             if updated_count > 0:
-                request.session['success_message'] = "Data karyawan berhasil diperbarui."
+                request.session['success_message'] = "Data master karyawan berhasil diperbarui."
             else:
                 request.session['error_message'] = "Tidak ada perubahan yang disimpan."
         except Exception as e:
@@ -1148,7 +1197,7 @@ def employee_profile(request, uid):
         # Fallback to raw object/dict
         try:
             emp_dict = {}
-            for key in ["uid", "nama", "jabatan", "lokasi", "tanggal_lahir"]:
+            for key in ["uid", "nama", "jabatan", "lokasi", "tanggal_lahir", "tanggal_MCU", "expired_MCU"]:
                 emp_dict[key] = employee_raw.get(key) if isinstance(employee_raw, dict) else getattr(employee_raw, key, None)
             employee_clean = emp_dict
         except Exception:
@@ -1199,6 +1248,14 @@ def employee_profile(request, uid):
             except Exception:
                 # If any issue occurs, leave it unset and template will show '-'
                 pass
+            # Fallback to baseline from Karyawan if checkup value missing
+            if not latest_disp.get('derajat_kesehatan'):
+                try:
+                    base_dk = (employee_clean or {}).get('derajat_kesehatan')
+                    if base_dk:
+                        latest_disp['derajat_kesehatan'] = str(base_dk)
+                except Exception:
+                    pass
             latest_disp["status"] = status
             latest_disp["flags"] = flags
             latest_checkup = latest_disp
@@ -1270,6 +1327,22 @@ def employee_profile(request, uid):
             except Exception:
                 emp_tanggal_lahir = None
 
+            # Format MCU dates from employee master data (pass-through, no computation)
+            emp_tanggal_mcu = None
+            emp_expired_mcu = None
+            try:
+                mcu_raw = (employee_clean or {}).get('tanggal_MCU')
+                mcu_dt = pd.to_datetime(mcu_raw, errors='coerce')
+                emp_tanggal_mcu = mcu_dt.strftime('%d/%m/%y') if pd.notna(mcu_dt) else None
+            except Exception:
+                pass
+            try:
+                exp_raw = (employee_clean or {}).get('expired_MCU')
+                exp_dt = pd.to_datetime(exp_raw, errors='coerce')
+                emp_expired_mcu = exp_dt.strftime('%d/%m/%y') if pd.notna(exp_dt) else None
+            except Exception:
+                pass
+
             from core.helpers import compute_status as _compute_status
             for _, row in df_hist2.iterrows():
                 # Numeric coercion for safety
@@ -1281,16 +1354,8 @@ def employee_profile(request, uid):
                 gds_n = pd.to_numeric(row.get('gula_darah_sewaktu', None), errors='coerce')
                 chol_n = pd.to_numeric(row.get('cholesterol', None), errors='coerce')
                 asam_n = pd.to_numeric(row.get('asam_urat', None), errors='coerce')
-                # Age: use row['umur'] if present, else compute
+                # Do NOT auto-compute umur; use provided XLS/master value as-is
                 umur_val = row.get('umur', None)
-                try:
-                    if pd.isna(umur_val):
-                        tl_dt = pd.to_datetime((employee_clean or {}).get('tanggal_lahir'), errors='coerce')
-                        tc_dt = pd.to_datetime(row.get('tanggal_checkup'), errors='coerce')
-                        if pd.notna(tl_dt) and pd.notna(tc_dt):
-                            umur_val = int((tc_dt.date() - tl_dt.date()).days // 365)
-                except Exception:
-                    pass
 
                 # Date formatting
                 tc_dt = pd.to_datetime(row.get('tanggal_checkup'), errors='coerce')
@@ -1304,6 +1369,14 @@ def employee_profile(request, uid):
                     'asam_urat': asam_n if pd.notna(asam_n) else 0,
                     'bmi': bmi_n if pd.notna(bmi_n) else 0,
                 })
+
+                # Prefer checkup derajat_kesehatan; fallback to employee baseline
+                dk_val = row.get('derajat_kesehatan', None)
+                try:
+                    if dk_val is None or (isinstance(dk_val, float) and pd.isna(dk_val)) or (isinstance(dk_val, str) and not dk_val.strip()):
+                        dk_val = (employee_clean or {}).get('derajat_kesehatan')
+                except Exception:
+                    pass
 
                 history_dashboard.append({
                     'uid': str(row.get('uid', uid)),
@@ -1322,9 +1395,9 @@ def employee_profile(request, uid):
                     'cholesterol': float(chol_n) if pd.notna(chol_n) else None,
                     'asam_urat': float(asam_n) if pd.notna(asam_n) else None,
                     'tekanan_darah': row.get('tekanan_darah', None),
-                    'derajat_kesehatan': str(row.get('derajat_kesehatan')) if row.get('derajat_kesehatan') is not None else None,
-                    'tanggal_MCU': None,
-                    'expired_MCU': None,
+                    'derajat_kesehatan': str(dk_val) if dk_val is not None else None,
+                    'tanggal_MCU': emp_tanggal_mcu,
+                    'expired_MCU': emp_expired_mcu,
                     'status': status_val,
                 })
     except Exception:
@@ -1334,6 +1407,22 @@ def employee_profile(request, uid):
     success_message = request.session.pop('success_message', None)
     error_message = request.session.pop('error_message', None)
     available_lokasi = get_all_lokasi()
+
+    # Compute MCU expiry estimate (days until/since expiration)
+    mcu_expiry_estimate = None
+    try:
+        exp_raw = (employee_clean or {}).get('expired_MCU')
+        exp_dt = pd.to_datetime(exp_raw, errors='coerce')
+        if pd.notna(exp_dt):
+            delta_days = (exp_dt.date() - datetime.today().date()).days
+            if delta_days > 0:
+                mcu_expiry_estimate = f"{delta_days} hari lagi"
+            elif delta_days == 0:
+                mcu_expiry_estimate = "Hari ini"
+            else:
+                mcu_expiry_estimate = f"Expired {abs(delta_days)} hari lalu"
+    except Exception:
+        pass
 
     return render(request, "manager/edit_karyawan.html", {
         "employee": employee_clean or {},
@@ -1347,6 +1436,8 @@ def employee_profile(request, uid):
         "success_message": success_message,
         "error_message": error_message,
         "available_lokasi": available_lokasi,
+        "lokasi_list": available_lokasi,
+        "mcu_expiry_estimate": mcu_expiry_estimate,
     })
 
 # New: Add Karyawan (Data Karyawan > Tambah karyawan)
@@ -1395,6 +1486,34 @@ def add_karyawan(request):
         return redirect(reverse("manager:dashboard"))
 
 @require_http_methods(["POST"])
+def add_lokasi(request):
+    """
+    Manager-only endpoint to add a new Lokasi and redirect back to Data Karyawan > Lokasi Management tab.
+    """
+    if not request.session.get("authenticated") or request.session.get("user_role") != "Manager":
+        return redirect("accounts:login")
+
+    lokasi_name = (request.POST.get("lokasi") or "").strip()
+    current_uid = (request.POST.get("current_uid") or "").strip()
+
+    if not lokasi_name or not validate_lokasi(lokasi_name):
+        request.session['error_message'] = "Nama lokasi tidak valid. Harap isi nama lokasi."
+    else:
+        try:
+            from core.core_models import Lokasi
+            obj, created = Lokasi.objects.get_or_create(nama=lokasi_name)
+            if created:
+                request.session['success_message'] = f"Lokasi '{lokasi_name}' berhasil ditambahkan."
+            else:
+                request.session['error_message'] = f"Lokasi '{lokasi_name}' sudah ada."
+        except Exception as e:
+            request.session['error_message'] = f"Gagal menambahkan lokasi: {e}"
+
+    if current_uid:
+        return redirect(reverse("manager:edit_karyawan", kwargs={"uid": current_uid}) + "?submenu=data_karyawan&subtab=lokasi")
+    return redirect(reverse("manager:manage_lokasi"))
+
+@require_http_methods(["POST"])
 def save_medical_checkup(request, uid):
     # Ensure only Manager can save
     if not request.session.get("authenticated") or request.session.get("user_role") != "Manager":
@@ -1411,40 +1530,19 @@ def save_medical_checkup(request, uid):
         asam_urat = request.POST.get("asam_urat")
         umur = request.POST.get("umur")
         derajat_kesehatan = request.POST.get("derajat_kesehatan")
-
-        # Compute BMI server-side (if inputs provided)
-        bmi = None
-        try:
-            if tinggi and berat:
-                t = float(tinggi)
-                b = float(berat)
-                bmi = round(b / ((t / 100) ** 2), 2) if t > 0 else None
-        except Exception:
-            bmi = None
+        tekanan_darah = request.POST.get("tekanan_darah")
+        bmi = request.POST.get("bmi")
 
         # Determine checkup date
         tanggal_checkup_date = pd.to_datetime(tanggal_checkup).date() if tanggal_checkup else datetime.today().date()
 
-        # Auto-calculate umur if not provided, using employee birthdate
+        # Normalize umur to int if provided (no auto-calculation)
         umur_value = None
-        if umur:
-            try:
+        try:
+            if umur:
                 umur_value = int(umur)
-            except Exception:
-                umur_value = None
-        else:
-            try:
-                from core.queries import get_employee_by_uid
-                emp = get_employee_by_uid(uid)
-                birth_raw = emp.get("tanggal_lahir") if isinstance(emp, dict) else getattr(emp, "tanggal_lahir", None)
-                birth_dt = pd.to_datetime(birth_raw, errors="coerce") if birth_raw else None
-                birth_date = birth_dt.date() if pd.notna(birth_dt) else None
-                if birth_date and tanggal_checkup_date:
-                    umur_value = tanggal_checkup_date.year - birth_date.year - (
-                        (tanggal_checkup_date.month, tanggal_checkup_date.day) < (birth_date.month, birth_date.day)
-                    )
-            except Exception:
-                umur_value = None
+        except Exception:
+            umur_value = None
 
         record = {
             "uid": uid,
@@ -1452,12 +1550,13 @@ def save_medical_checkup(request, uid):
             "tinggi": float(tinggi) if tinggi else None,
             "berat": float(berat) if berat else None,
             "lingkar_perut": float(lingkar_perut) if lingkar_perut else None,
-            "bmi": float(bmi) if bmi is not None else None,
+            "bmi": float(bmi) if bmi else None,
             "umur": umur_value,
             "gula_darah_puasa": float(gula_darah_puasa) if gula_darah_puasa else None,
             "gula_darah_sewaktu": float(gula_darah_sewaktu) if gula_darah_sewaktu else None,
             "cholesterol": float(cholesterol) if cholesterol else None,
             "asam_urat": float(asam_urat) if asam_urat else None,
+            "tekanan_darah": tekanan_darah.strip() if tekanan_darah else None,
             "derajat_kesehatan": derajat_kesehatan.strip() if derajat_kesehatan else None,
         }
 
@@ -1475,8 +1574,8 @@ def export_checkup_data_excel(request):
         return redirect("accounts:login")
 
     try:
-        # Load all checkups
-        df = load_checkups()
+        # Build dashboard-like dataset (current available data)
+        df = get_dashboard_checkup_data()
 
         # If no data, show warning and redirect to Export tab
         if df is None or df.empty:
@@ -1495,6 +1594,54 @@ def export_checkup_data_excel(request):
         request.session["error_message"] = f"Failed to export data: {e}"
         return redirect(reverse("manager:upload_export") + "?submenu=export_data")
 
+@require_http_methods(["GET"]) 
+def export_master_karyawan_excel(request):
+    """Export master karyawan data to Excel (schema matches uploaded master XLS)."""
+    # Auth guard for Manager
+    if not request.session.get("authenticated") or request.session.get("user_role") != "Manager":
+        return redirect("accounts:login")
+
+    try:
+        df = get_employees().copy()
+        if df is None or df.empty:
+            request.session["warning_message"] = "belum ada data karyawan untuk diekspor"
+            return redirect(reverse("manager:upload_export") + "?submenu=export_data")
+
+        # Columns to match master upload schema
+        cols_order = [
+            "nama", "jabatan", "lokasi", "tanggal_lahir",
+            "tanggal_MCU", "expired_MCU",
+            "derajat_kesehatan", "tinggi", "berat", "bmi", "bmi_category",
+        ]
+        for col in cols_order:
+            if col not in df.columns:
+                df[col] = None
+        df_export = df[cols_order]
+
+        # Format dates to dd/mm/yy for consistency with uploads
+        for col in ["tanggal_lahir", "tanggal_MCU", "expired_MCU"]:
+            if col in df_export.columns:
+                try:
+                    df_export[col] = pd.to_datetime(df_export[col], errors='coerce').dt.strftime('%d/%m/%y')
+                except Exception:
+                    pass
+
+        # Write to Excel
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df_export.to_excel(writer, index=False, sheet_name="Master Karyawan")
+        output.seek(0)
+
+        response = HttpResponse(
+            output.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = 'attachment; filename="master_karyawan.xlsx"'
+        return response
+    except Exception as e:
+        request.session["error_message"] = f"Failed to export master data: {e}"
+        return redirect(reverse("manager:upload_export") + "?submenu=export_data")
+
 
 
 # users_interface/manager/manager_views.py
@@ -1509,7 +1656,7 @@ from django.conf import settings
 import base64
 from users_ui.qr.qr_utils import generate_qr_bytes
 import uuid
-from utils.validators import safe_date, validate_lokasi, normalize_string
+from utils.validators import safe_date, validate_lokasi, normalize_string, safe_float
 
 from core.queries import (
     get_users,
@@ -1584,7 +1731,8 @@ def dashboard(request):
         'nama': request.GET.get('nama', ''),
         'jabatan': request.GET.get('jabatan', ''),
         'lokasi': request.GET.get('lokasi', ''),  # Single location selection
-        'status': request.GET.get('status', ''),  # New status filter
+        'status': request.GET.get('status', ''),  # Well/Unwell
+        'expiry': request.GET.get('expiry', ''),  # Expired/Almost Expired filter
     }
     
     # Apply filters
@@ -1599,6 +1747,30 @@ def dashboard(request):
     if filters['status']:  # Filter by Well/Unwell status
         df = df[df['status'] == filters['status']]
     # Date range filter removed: always showing latest checkup data
+
+    # Compute MCU expiry flags for styling (expired = red, within 60 days = yellow)
+    try:
+        if 'expired_MCU' in df.columns:
+            expired_dt = pd.to_datetime(df['expired_MCU'], format='%d/%m/%y', errors='coerce')
+            today = pd.Timestamp.today().normalize()
+            warn_deadline = today + pd.Timedelta(days=60)
+            df['mcu_is_expired'] = expired_dt.notna() & (expired_dt < today)
+            df['mcu_is_warning'] = expired_dt.notna() & (expired_dt >= today) & (expired_dt <= warn_deadline)
+        else:
+            df['mcu_is_expired'] = False
+            df['mcu_is_warning'] = False
+    except Exception:
+        # Fallback to avoid breaking dashboard rendering
+        df['mcu_is_expired'] = False
+        df['mcu_is_warning'] = False
+
+    # Apply expiry filter after computing flags
+    if filters.get('expiry'):
+        val = str(filters['expiry']).lower()
+        if val == 'expired':
+            df = df[df['mcu_is_expired']]
+        elif val in ('warning', 'almost', 'almost_expired', 'almost-expired'):
+            df = df[df['mcu_is_warning']]
     
     # Get unique values for dropdowns from filtered data
     # Build a mapping of normalized key -> cleaned display value to dedupe case/spacing
@@ -1978,7 +2150,7 @@ def upload_master_karyawan_xls(request):
         {"key": "qr", "name": "QR Codes", "url": reverse("manager:qr_codes"), "icon": "qrcode"},
         {"key": "data", "name": "Upload & Export", "url": reverse("manager:upload_export"), "icon": "upload"},
         {"key": "hapus_data_karyawan", "name": "Hapus Data Karyawan", "url": reverse("manager:hapus_data_karyawan"), "icon": "database"},
-        {"key": "edit_karyawan", "name": "Edit Karyawan Data", "url": reverse("manager:edit_karyawan", kwargs={'uid': default_uid}) if default_uid else '#', "icon": "edit"},
+        {"key": "edit_karyawan", "name": "Edit Master Data", "url": reverse("manager:edit_karyawan", kwargs={'uid': default_uid}) if default_uid else '#', "icon": "edit"},
     ]
     
     if request.method == "POST" and request.FILES.get("file"):
@@ -2010,7 +2182,7 @@ def upload_medical_checkup_xls(request):
         {"key": "qr", "name": "QR Codes", "url": reverse("manager:qr_codes"), "icon": "qrcode"},
         {"key": "data", "name": "Upload & Export", "url": reverse("manager:upload_export"), "icon": "upload"},
         {"key": "hapus_data_karyawan", "name": "Hapus Data Karyawan", "url": reverse("manager:hapus_data_karyawan"), "icon": "database"},
-        {"key": "edit_karyawan", "name": "Edit Karyawan Data", "url": reverse("manager:edit_karyawan", kwargs={'uid': default_uid}) if default_uid else '#', "icon": "edit"},
+        {"key": "edit_karyawan", "name": "Edit Master Data", "url": reverse("manager:edit_karyawan", kwargs={'uid': default_uid}) if default_uid else '#', "icon": "edit"},
     ]
     
     if request.method == "POST" and request.FILES.get("file"):
@@ -2024,10 +2196,26 @@ def upload_medical_checkup_xls(request):
                 for chunk in uploaded_file.chunks():
                     dest.write(chunk)
 
-            result = checkup_uploader.parse_checkup_xls(save_path)
+            # Decide parser based on anthropometric columns presence (check aliases across all sheets)
+            all_sheets = pd.read_excel(save_path, sheet_name=None, dtype=str)
+            union_cols = set()
+            for _df in (all_sheets.values() if all_sheets else []):
+                try:
+                    _norm = {str(c).strip().lower().replace(' ', '_') for c in getattr(_df, 'columns', [])}
+                    union_cols |= _norm
+                except Exception:
+                    continue
+            keys = ['tinggi', 'berat', 'bmi', 'height', 'weight', 'imt']
+            has_anthro = any(any(k in col for k in keys) for col in union_cols)
+            if has_anthro:
+                result = excel_parser.parse_checkup_anthropometric(save_path)
+            else:
+                result = checkup_uploader.parse_checkup_xls(save_path)
             # Write log entry for this upload
             write_checkup_upload_log(original_name, result)
-            request.session['success_message'] = "Excel berhasil di upload!"
+            inserted = int(result.get('inserted', 0)) if isinstance(result, dict) else 0
+            skipped = len(result.get('skipped', [])) if isinstance(result, dict) else 0
+            request.session['success_message'] = f"Excel berhasil di upload! {inserted} checkup disimpan, {skipped} baris dilewati."
         except Exception as e:
             request.session['error_message'] = f"Upload failed: {e}"
         return redirect(reverse("manager:dashboard"))

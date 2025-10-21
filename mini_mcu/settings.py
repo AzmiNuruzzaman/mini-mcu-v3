@@ -15,7 +15,7 @@ ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "*").split(",")
 # Include Render by default for CSRF; can be overridden via env
 CSRF_TRUSTED_ORIGINS = os.getenv(
     "CSRF_TRUSTED_ORIGINS",
-    "https://*.railway.app,https://*.onrender.com"
+    "http://localhost,http://127.0.0.1,https://*.railway.app,https://*.onrender.com"
 ).split(",")
 
 # If deploying on Render, automatically allow the Render external host
@@ -72,7 +72,9 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.messages.context_processors.messages",
                 "users_ui.manager.context_processors.manager_menu",
+                "users_ui.manager.context_processors.manager_notifications",
                 "users_ui.nurse.context_processors.nurse_menu",
+                "users_ui.nurse.context_processors.nurse_notifications",
             ],
         },
     },
@@ -85,15 +87,41 @@ WSGI_APPLICATION = "mini_mcu.wsgi.application"
 # -----------------------------
 local_db = {
     "ENGINE": "django.db.backends.postgresql",
-    "NAME": "mini_mcu_v2",
-    "USER": "postgres",
-    "PASSWORD": "1,588@ASDf",
-    "HOST": "localhost",
-    "PORT": "5432",
+    "NAME": os.getenv("POSTGRES_DB", "mini_mcu_v2"),
+    "USER": os.getenv("POSTGRES_USER", "postgres"),
+    "PASSWORD": os.getenv("POSTGRES_PASSWORD", "1,588@ASDf"),
+    "HOST": os.getenv("POSTGRES_HOST", "localhost"),
+    "PORT": os.getenv("POSTGRES_PORT", "5432"),
     "OPTIONS": {"options": "-c search_path=public"},
 }
 
-db_url = os.getenv("DATABASE_URL") or os.getenv("DATABASE_PUBLIC_URL")
+# Normalize DATABASE_URL to handle special characters in password (e.g., comma, @)
+def _normalize_database_url(url: str) -> str:
+    if not url:
+        return url
+    try:
+        s = str(url)
+        if "://" not in s:
+            return s
+        scheme, rest = s.split("://", 1)
+        at_idx = rest.rfind("@")
+        if at_idx == -1:
+            return s
+        userinfo = rest[:at_idx]
+        hostpart = rest[at_idx+1:]
+        colon_idx = userinfo.find(":")
+        if colon_idx == -1:
+            return s
+        user = userinfo[:colon_idx]
+        pw = userinfo[colon_idx+1:]
+        from urllib.parse import quote
+        pw_enc = quote(pw, safe="")
+        return f"{scheme}://{user}:{pw_enc}@{hostpart}"
+    except Exception:
+        return url
+
+raw_db_url = os.getenv("DATABASE_URL") or os.getenv("DATABASE_PUBLIC_URL")
+db_url = _normalize_database_url(raw_db_url)
 
 # Optional lightweight local preview using SQLite
 if os.getenv("DJANGO_USE_SQLITE", "False").lower() == "true":
@@ -106,10 +134,14 @@ if os.getenv("DJANGO_USE_SQLITE", "False").lower() == "true":
 elif os.getenv("DJANGO_USE_LOCAL_DB", "False").lower() == "true":
     DATABASES = {"default": local_db}
 elif db_url:
-    # Toggle SSL requirement based on host: public proxy needs SSL, internal may not
+    # Toggle SSL requirement: disable for localhost/127.0.0.1 or Railway internal
     ssl_req = True
     try:
-        if "railway.internal" in db_url:
+        if (
+            "railway.internal" in db_url or
+            "localhost" in db_url or
+            "127.0.0.1" in db_url
+        ):
             ssl_req = False
     except Exception:
         ssl_req = True
@@ -156,6 +188,10 @@ MEDIA_ROOT = Path(os.getenv("DJANGO_MEDIA_ROOT", str(BASE_DIR / "media")))
 UPLOAD_DIR = MEDIA_ROOT / "uploads"
 UPLOAD_CHECKUPS_DIR = UPLOAD_DIR / "checkups"
 UPLOAD_LOG_DIR = UPLOAD_DIR / "logs"
+os.makedirs(MEDIA_ROOT, exist_ok=True)
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(UPLOAD_CHECKUPS_DIR, exist_ok=True)
+os.makedirs(UPLOAD_LOG_DIR, exist_ok=True)
 # -----------------------------
 # Default primary key
 # -----------------------------

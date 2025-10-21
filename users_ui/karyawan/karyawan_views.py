@@ -3,6 +3,9 @@ from django.shortcuts import render
 from django.http import HttpResponse
 import pandas as pd
 from core.queries import load_checkups, get_employee_by_uid
+from core.helpers import compute_status
+from datetime import datetime
+
 
 def karyawan_landing(request):
     uid = request.GET.get("uid")
@@ -115,13 +118,124 @@ def karyawan_landing(request):
         latest_checkup = None
         history_checkups = []
 
+    # Build dashboard-like history for template (same structure manager uses)
+    history_dashboard = []
+    try:
+        if df_user is not None and not df_user.empty:
+            df_hist = df_user.copy()
+            # Ensure tanggal_checkup is datetime
+            if 'tanggal_checkup' in df_hist.columns:
+                df_hist['tanggal_checkup'] = pd.to_datetime(df_hist['tanggal_checkup'], errors='coerce')
+            df_hist = df_hist.sort_values('tanggal_checkup', ascending=False)
+
+            # Employee info fallbacks
+            emp_nama = (emp or {}).get('nama')
+            emp_jabatan = (emp or {}).get('jabatan')
+            emp_lokasi = (emp or {}).get('lokasi')
+            emp_tanggal_lahir_fmt = None
+            try:
+                tl_raw = (emp or {}).get('tanggal_lahir')
+                tl_dt = pd.to_datetime(tl_raw, errors='coerce')
+                emp_tanggal_lahir_fmt = tl_dt.strftime('%d/%m/%y') if pd.notna(tl_dt) else None
+            except Exception:
+                emp_tanggal_lahir_fmt = None
+            # MCU dates
+            emp_tanggal_mcu = None
+            emp_expired_mcu = None
+            try:
+                mcu_raw = (emp or {}).get('tanggal_MCU')
+                mcu_dt = pd.to_datetime(mcu_raw, errors='coerce')
+                emp_tanggal_mcu = mcu_dt.strftime('%d/%m/%y') if pd.notna(mcu_dt) else None
+            except Exception:
+                pass
+            try:
+                exp_raw = (emp or {}).get('expired_MCU')
+                exp_dt = pd.to_datetime(exp_raw, errors='coerce')
+                emp_expired_mcu = exp_dt.strftime('%d/%m/%y') if pd.notna(exp_dt) else None
+            except Exception:
+                pass
+
+            for _, row in df_hist.iterrows():
+                # Numeric coercion
+                tinggi_n = pd.to_numeric(row.get('tinggi', None), errors='coerce')
+                berat_n = pd.to_numeric(row.get('berat', None), errors='coerce')
+                bmi_n = pd.to_numeric(row.get('bmi', None), errors='coerce')
+                lp_n = pd.to_numeric(row.get('lingkar_perut', None), errors='coerce')
+                gdp_n = pd.to_numeric(row.get('gula_darah_puasa', None), errors='coerce')
+                gds_n = pd.to_numeric(row.get('gula_darah_sewaktu', None), errors='coerce')
+                chol_n = pd.to_numeric(row.get('cholesterol', None), errors='coerce')
+                asam_n = pd.to_numeric(row.get('asam_urat', None), errors='coerce')
+                # Age (no auto-computation): use provided umur as-is
+                umur_val = row.get('umur', None)
+                # Date formatting
+                tc_dt = pd.to_datetime(row.get('tanggal_checkup'), errors='coerce')
+                tanggal_str = tc_dt.strftime('%d/%m/%y') if pd.notna(tc_dt) else None
+                # Status using helper
+                status_val = compute_status({
+                    'gula_darah_puasa': gdp_n if pd.notna(gdp_n) else 0,
+                    'gula_darah_sewaktu': gds_n if pd.notna(gds_n) else 0,
+                    'cholesterol': chol_n if pd.notna(chol_n) else 0,
+                    'asam_urat': asam_n if pd.notna(asam_n) else 0,
+                    'bmi': bmi_n if pd.notna(bmi_n) else 0,
+                })
+                # Derajat kesehatan prefer row, fallback to employee
+                dk_val = row.get('derajat_kesehatan', None)
+                try:
+                    if dk_val is None or (isinstance(dk_val, float) and pd.isna(dk_val)) or (isinstance(dk_val, str) and not dk_val.strip()):
+                        dk_val = (emp or {}).get('derajat_kesehatan')
+                except Exception:
+                    pass
+
+                history_dashboard.append({
+                    'uid': str(row.get('uid', uid)),
+                    'nama': emp_nama,
+                    'jabatan': emp_jabatan,
+                    'lokasi': emp_lokasi,
+                    'tanggal_lahir': emp_tanggal_lahir_fmt,
+                    'umur': int(umur_val) if pd.notna(pd.to_numeric(umur_val, errors='coerce')) else None,
+                    'tanggal_checkup': tanggal_str,
+                    'tinggi': float(tinggi_n) if pd.notna(tinggi_n) else None,
+                    'berat': float(berat_n) if pd.notna(berat_n) else None,
+                    'bmi': float(bmi_n) if pd.notna(bmi_n) else None,
+                    'lingkar_perut': float(lp_n) if pd.notna(lp_n) else None,
+                    'gula_darah_puasa': float(gdp_n) if pd.notna(gdp_n) else None,
+                    'gula_darah_sewaktu': float(gds_n) if pd.notna(gds_n) else None,
+                    'cholesterol': float(chol_n) if pd.notna(chol_n) else None,
+                    'asam_urat': float(asam_n) if pd.notna(asam_n) else None,
+                    'tekanan_darah': row.get('tekanan_darah', None),
+                    'derajat_kesehatan': str(dk_val) if dk_val is not None else None,
+                    'tanggal_MCU': emp_tanggal_mcu,
+                    'expired_MCU': emp_expired_mcu,
+                    'status': status_val,
+                })
+    except Exception:
+        history_dashboard = []
+
+    # Compute MCU expiry estimate (days until/since expiration)
+    mcu_expiry_estimate = None
+    try:
+        exp_raw = (emp or {}).get('expired_MCU')
+        exp_dt = pd.to_datetime(exp_raw, errors='coerce')
+        if pd.notna(exp_dt):
+            delta_days = (exp_dt.date() - datetime.today().date()).days
+            if delta_days > 0:
+                mcu_expiry_estimate = f"{delta_days} hari lagi"
+            elif delta_days == 0:
+                mcu_expiry_estimate = "Hari ini"
+            else:
+                mcu_expiry_estimate = f"Expired {abs(delta_days)} hari lalu"
+    except Exception:
+        pass
+
     context = {
         "employee": emp,
         "latest_checkup": latest_checkup,
         "history_checkups": history_checkups,
+        "history_dashboard": history_dashboard,
         "active_submenu": request.GET.get("submenu", "data_karyawan"),
         "active_subtab": request.GET.get("subtab", "profile"),
         "view_only": True,
+        "mcu_expiry_estimate": mcu_expiry_estimate,
     }
 
     return render(request, "manager/edit_karyawan.html", context)

@@ -20,7 +20,7 @@
       <a href="?submenu=edit_data" 
          class="hidden pb-3 px-4 font-medium text-gray-700 hover:text-blue-600 transition-colors
                 {% if active_submenu == 'edit_data' %}text-blue-600 border-b-2 border-blue-600{% endif %}">
-          Edit Karyawan Data
+          Edit Data Checkup
       </a>
       <a href="{% if view_only %}?uid={{ employee.uid }}&submenu=history{% else %}?submenu=history{% endif %}" 
          class="pb-3 px-4 font-medium text-gray-700 hover:bg-slate-100 rounded-t-md border border-slate-300 -mb-px transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300
@@ -40,7 +40,7 @@
       <a href="?submenu=data_karyawan&subtab=edit_data" 
          class="pb-2 px-3 font-medium text-gray-700 hover:bg-slate-100 rounded-t-md border border-slate-300 -mb-px transition-colors focus:outline-none focus:ring-2 focus:ring-green-300
                 {% if active_subtab == 'edit_data' %}bg-green-600 text-white border-green-600{% endif %}">
-          Edit Karyawan Data
+          Edit Data Checkup
       </a>
   </div>
   {% endif %}
@@ -77,6 +77,10 @@
                 <td class="border px-4 py-2">{{ employee.nama }}</td>
               </tr>
               <tr>
+                <td class="border px-4 py-2">UID</td>
+                <td class="border px-4 py-2"><span class="font-mono">{{ employee.uid }}</span></td>
+              </tr>
+              <tr>
                 <td class="border px-4 py-2">Jabatan</td>
                 <td class="border px-4 py-2">{{ employee.jabatan }}</td>
               </tr>
@@ -96,7 +100,7 @@
                   {% endif %}
                 </td>
               </tr>
-              <tr>
+              <tr class="hidden">
                 <td class="border px-4 py-2">Umur</td>
                 <td class="border px-4 py-2">{% if latest_checkup and latest_checkup.umur %}{{ latest_checkup.umur }}{% else %}-{% endif %}</td>
               </tr>
@@ -104,17 +108,81 @@
                 <td class="border px-4 py-2">Derajat Kesehatan</td>
                 <td class="border px-4 py-2">
                   {% if latest_checkup and latest_checkup.derajat_kesehatan %}
-                    <span class="inline-block px-2 py-1 rounded text-sm font-medium
-                      {% if latest_checkup.derajat_kesehatan in 'P1,P2,P3' %} bg-green-100 text-green-800 border border-green-300
-                      {% elif latest_checkup.derajat_kesehatan in 'P4,P5' %} bg-yellow-100 text-yellow-800 border border-yellow-300
-                      {% elif latest_checkup.derajat_kesehatan in 'P6,P7' %} bg-red-100 text-red-800 border border-red-300
-                      {% else %} bg-gray-100 text-gray-800 border border-gray-300 {% endif %}">
-                      {{ latest_checkup.derajat_kesehatan }}
-                    </span>
+                    {% with dk=latest_checkup.derajat_kesehatan|upper %}
+                      {% if dk == "P1" or dk == "P2" or dk == "P3" %}
+                        <span class="text-green-600 font-semibold">{{ dk }}</span>
+                      {% elif dk == "P4" %}
+                        <span class="text-yellow-600 font-semibold">{{ dk }}</span>
+                      {% elif dk == "P5" %}
+                        <span class="text-orange-600 font-semibold">{{ dk }}</span>
+                      {% elif dk == "P6" or dk == "P7" %}
+                        <span class="text-red-600 font-semibold">{{ dk }}</span>
+                      {% elif dk %}
+                        <span class="text-gray-700 font-semibold">{{ dk }}</span>
+                      {% else %}
+                        <span class="text-gray-400 italic">-</span>
+                      {% endif %}
+                    {% endwith %}
+                  {% elif employee.derajat_kesehatan %}
+                    {% with dk=employee.derajat_kesehatan|upper %}
+                      {% if dk == "P1" or dk == "P2" or dk == "P3" %}
+                        <span class="text-green-600 font-semibold">{{ dk }}</span>
+                      {% elif dk == "P4" %}
+                        <span class="text-yellow-600 font-semibold">{{ dk }}</span>
+                      {% elif dk == "P5" %}
+                        <span class="text-orange-600 font-semibold">{{ dk }}</span>
+                      {% elif dk == "P6" or dk == "P7" %}
+                        <span class="text-red-600 font-semibold">{{ dk }}</span>
+                      {% elif dk %}
+                        <span class="text-gray-700 font-semibold">{{ dk }}</span>
+                      {% else %}
+                        <span class="text-gray-400 italic">-</span>
+                      {% endif %}
+                    {% endwith %}
+                  {% else %}
+                    <span class="text-gray-400 italic">-</span>
+                  {% endif %}
+                </td>
+              </tr>
+              <tr>
+                <td class="border px-4 py-2">Berat</td>
+                <td class="border px-4 py-2">
+                  {% if latest_checkup and latest_checkup.berat %}
+                    {{ latest_checkup.berat }}
+                  {% elif employee.berat %}
+                    {{ employee.berat }}
                   {% else %}
                     -
                   {% endif %}
                 </td>
+              </tr>
+              <tr>
+                <td class="border px-4 py-2">Tinggi</td>
+                <td class="border px-4 py-2">
+                  {% if latest_checkup and latest_checkup.tinggi %}
+                    {{ latest_checkup.tinggi }}
+                  {% elif employee.tinggi %}
+                    {{ employee.tinggi }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+              </tr>
+              <tr>
+                <td class="border px-4 py-2">BMI</td>
+                <td class="border px-4 py-2">
+                  {% if latest_checkup and latest_checkup.bmi %}
+                    {{ latest_checkup.bmi }}
+                  {% elif employee.bmi %}
+                    {{ employee.bmi }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+              </tr>
+              <tr>
+                <td class="border px-4 py-2">BMI Category</td>
+                <td class="border px-4 py-2">{{ employee.bmi_category|default:"-" }}</td>
               </tr>
               <tr>
                 <td class="border px-4 py-2">Kontak Darurat</td>
@@ -133,18 +201,32 @@
             </tbody>
           </table>
         </div>
-        <!-- MCU Box: Placeholder for Tanggal MCU and Expired MCU -->
+        <!-- MCU DataFrame -->
         <div class="mt-6 p-4 bg-white shadow rounded">
           <h3 class="text-lg font-semibold mb-3">MCU</h3>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div class="border px-4 py-2 rounded">
-              <div class="text-sm text-gray-600">Tanggal MCU</div>
-              <div class="font-medium">{{ latest_checkup.tanggal_checkup|default:"-" }}</div>
-            </div>
-            <div class="border px-4 py-2 rounded">
-              <div class="text-sm text-gray-600">Expired MCU</div>
-              <div class="font-medium">-</div>
-            </div>
+          <div class="overflow-x-auto">
+            <table class="min-w-full table-auto border-collapse border border-gray-300">
+              <thead>
+                <tr class="bg-gray-100">
+                  <th class="border px-4 py-2 text-left">Field</th>
+                  <th class="border px-4 py-2 text-left">Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="border px-4 py-2">Tanggal MCU</td>
+                  <td class="border px-4 py-2">{{ employee.tanggal_MCU|default:"-" }}</td>
+                </tr>
+                <tr>
+                  <td class="border px-4 py-2">Expired MCU</td>
+                  <td class="border px-4 py-2">{{ employee.expired_MCU|default:"-" }}</td>
+                </tr>
+                <tr>
+                  <td class="border px-4 py-2">Estimasi Hari ke Expired</td>
+                  <td class="border px-4 py-2">{{ mcu_expiry_estimate|default:"-" }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </section>
@@ -165,10 +247,6 @@
               <tr>
                 <td class="border px-4 py-2">Tanggal Checkup</td>
                 <td class="border px-4 py-2">{{ latest_checkup.tanggal_checkup }}</td>
-              </tr>
-              <tr>
-                <td class="border px-4 py-2">BMI</td>
-                <td class="border px-4 py-2 {% if latest_checkup.flags and latest_checkup.flags.bmi_high %}text-red-600 font-semibold{% endif %}">{{ latest_checkup.bmi|default:"-" }}</td>
               </tr>
               <tr>
                 <td class="border px-4 py-2">Gula Darah Puasa</td>
@@ -207,6 +285,10 @@
                 </td>
               </tr>
               <tr>
+                <td class="border px-4 py-2">Lingkar Perut (cm)</td>
+                <td class="border px-4 py-2">{{ latest_checkup.lingkar_perut|default:"-" }}</td>
+              </tr>
+              <tr>
                 <td class="border px-4 py-2">Status</td>
                 <td class="border px-4 py-2">
                   {% if latest_checkup and latest_checkup.status %}
@@ -227,7 +309,7 @@
 
   <!-- Edit Karyawan Data Content (empty; now under Data Karyawan > Edit Karyawan Data) -->
   <div id="edit-data-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4 {% if active_submenu != 'data_karyawan' or active_subtab != 'edit_data' %}hidden{% endif %}">
-      <h2 class="text-xl font-bold mb-3">Edit Karyawan Data</h2>
+      <h2 class="text-xl font-bold mb-3">Edit Data Checkup</h2>
       <div class="mb-2">
          <span class="text-sm text-green-600 font-semibold cursor-help" title="Pilih karyawan di tab Karyawan Profile">Pilih karyawan di tab Karyawan Profile</span>
       </div>
@@ -251,9 +333,6 @@
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal Lahir</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Umur</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal Checkup</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tinggi</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Berat</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BMI</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lingkar Perut</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">GDP</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">GDS</th>
@@ -277,9 +356,6 @@
               <td class="px-6 py-4 whitespace-nowrap">{{ row.tanggal_lahir|default:"-" }}</td>
               <td class="px-6 py-4 whitespace-nowrap">{{ row.umur|default:"-" }}</td>
               <td class="px-6 py-4 whitespace-nowrap">{{ row.tanggal_checkup|default:"-" }}</td>
-              <td class="px-6 py-4 whitespace-nowrap">{{ row.tinggi|default:"-" }}</td>
-              <td class="px-6 py-4 whitespace-nowrap">{{ row.berat|default:"-" }}</td>
-              <td class="px-6 py-4 whitespace-nowrap">{{ row.bmi|default:"-" }}</td>
               <td class="px-6 py-4 whitespace-nowrap">{{ row.lingkar_perut|default:"-" }}</td>
               <td class="px-6 py-4 whitespace-nowrap">{{ row.gula_darah_puasa|default:"-" }}</td>
               <td class="px-6 py-4 whitespace-nowrap">{{ row.gula_darah_sewaktu|default:"-" }}</td>

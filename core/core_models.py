@@ -37,17 +37,26 @@ class Lokasi(models.Model):
 # Karyawan
 # -------------------------
 class Karyawan(models.Model):
-    uid = models.UUIDField(primary_key=True)
-    nama = models.TextField()
-    jabatan = models.TextField()
-    lokasi = models.TextField()
+    uid = models.CharField(primary_key=True, max_length=64)
+    nama = models.CharField(max_length=255, blank=True, null=True)
+    jabatan = models.CharField(max_length=255, blank=True, null=True)
+    lokasi = models.CharField(max_length=255, blank=True, null=True)
     tanggal_lahir = models.DateField(blank=True, null=True)
+    # Add XLS-provided age (umur) to master data; do not auto-compute
+    umur = models.IntegerField(blank=True, null=True)
+    tanggal_MCU = models.DateField(blank=True, null=True)
+    expired_MCU = models.DateField(blank=True, null=True)
     uploaded_at = models.DateTimeField(blank=True, null=True)
-    upload_batch_id = models.UUIDField(blank=True, null=True)
+    upload_batch_id = models.CharField(max_length=64, blank=True, null=True)
+    derajat_kesehatan = models.CharField(max_length=64, blank=True, null=True)
+    tinggi = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
+    berat = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
+    bmi = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
+    bmi_category = models.CharField(max_length=64, blank=True, null=True)
 
     class Meta:
-        db_table = "karyawan"
         managed = False
+        db_table = 'karyawan'
 
     def __str__(self):
         return f"{self.nama} - {self.jabatan}"
@@ -71,6 +80,7 @@ class Checkup(models.Model):
     gula_darah_sewaktu = models.DecimalField(max_digits=6, decimal_places=2, blank=True, null=True)
     cholesterol = models.DecimalField(max_digits=6, decimal_places=2, blank=True, null=True)
     asam_urat = models.DecimalField(max_digits=6, decimal_places=2, blank=True, null=True)
+    tekanan_darah = models.CharField(max_length=20, blank=True, null=True)
     status = models.CharField(max_length=50, blank=True, null=True)
     lokasi = models.CharField(max_length=100, blank=True, null=True)
 

@@ -11,19 +11,19 @@ from core.core_models import Karyawan
 CHECKUP_COLUMNS = {
     "uid": ["uid", "employee_id", "karyawan_uid"],
     "tanggal_checkup": ["tanggal_checkup", "date", "checkup_date"],
-    "tanggal_lahir": ["tanggal_lahir", "birthdate", "dob", "tgl_lahir"],
-    "umur": ["umur", "age"],
-    "tinggi": ["tinggi", "tinggi_badan", "height", "tb"],
-    "berat": ["berat", "berat_badan", "weight", "bb"],
-    "lingkar_perut": ["lingkar_perut", "waist", "lp"],
-    "bmi": ["bmi", "body_mass_index"],
     "gula_darah_puasa": ["gula_darah_puasa", "gdp", "blood_sugar_fasting"],
     "gula_darah_sewaktu": ["gula_darah_sewaktu", "gds", "blood_sugar_random"],
+    "tekanan_darah": ["tekanan_darah", "blood_pressure", "td", "tensi", "tekanan darah"],
     "cholesterol": ["cholesterol", "kolesterol", "chol"],
     "asam_urat": ["asam_urat", "urat", "uric_acid"],
+    "lingkar_perut": ["lingkar_perut", "waist", "lp"],
+    # Anthropometrics REMOVED: handled in master upload
+    # "tinggi": ["tinggi", "tinggi_badan", "height", "tb", "tinggi_badan_(cm)", "height_cm"],
+    # "berat": ["berat", "berat_badan", "weight", "bb", "berat_(kg)", "weight_kg"],
+    # "bmi": ["bmi", "body_mass_index", "imt", "bmi_(kg/m2)", "indeks_massa_tubuh"],
+    "derajat_kesehatan": ["derajat_kesehatan", "derajat kesehatan", "derajat"],
     "lokasi": ["lokasi", "location", "site"],
     "keterangan": ["keterangan", "notes", "remark"],
-    "derajat_kesehatan": ["derajat_kesehatan", "derajat kesehatan", "derajat"],
 }
 
 MANDATORY_CHECKUP_FIELDS = ["uid", "tanggal_checkup"]
@@ -86,12 +86,11 @@ def parse_checkup_xls(file_path):
         if 'derajat_kesehatan' in df.columns:
             df['derajat_kesehatan'] = df['derajat_kesehatan'].astype(str).str.strip().str.upper()
 
-        # Convert numeric fields
-        numeric_cols = ['tinggi','berat','lingkar_perut','gula_darah_puasa','gula_darah_sewaktu',
-                        'cholesterol','asam_urat','umur','bmi']
+        # Convert numeric fields (monthly metrics only; anthropometrics excluded)
+        numeric_cols = ['gula_darah_puasa','gula_darah_sewaktu','cholesterol','asam_urat','lingkar_perut']
         for col in numeric_cols:
             if col in df.columns:
-                df[col] = df[col].str.replace(',', '.').apply(safe_float)
+                df[col] = df[col].astype(str).str.replace(',', '.').apply(safe_float)
 
         # Convert dates
         for col in ['tanggal_lahir', 'tanggal_checkup']:
@@ -110,26 +109,22 @@ def parse_checkup_xls(file_path):
                 continue
 
             try:
-                tinggi_cm = row_dict.get('tinggi')
-                berat = row_dict.get('berat')
-                tinggi_m = (tinggi_cm / 100) if tinggi_cm else None
-                bmi = round(berat / (tinggi_m ** 2), 2) if berat and tinggi_m else row_dict.get('bmi')
-
                 checkup_data = {
                     'uid': karyawan,  # Pass Karyawan instance instead of UID string
                     'tanggal_checkup': row_dict.get('tanggal_checkup') or pd.Timestamp.today().date(),
-                    'tanggal_lahir': row_dict.get('tanggal_lahir'),
-                    'umur': row_dict.get('umur'),
-                    'tinggi': tinggi_cm,
-                    'berat': berat,
-                    'lingkar_perut': row_dict.get('lingkar_perut'),
-                    'bmi': bmi,
+                    # Anthropometrics excluded from checkup ingestion
+                    # 'tinggi': row_dict.get('tinggi'),
+                    # 'berat': row_dict.get('berat'),
+                    # 'bmi': row_dict.get('bmi'),
+                    # Standard metrics
                     'gula_darah_puasa': row_dict.get('gula_darah_puasa'),
                     'gula_darah_sewaktu': row_dict.get('gula_darah_sewaktu'),
+                    'tekanan_darah': row_dict.get('tekanan_darah'),
                     'cholesterol': row_dict.get('cholesterol'),
                     'asam_urat': row_dict.get('asam_urat'),
-                    'lokasi': row_dict.get('lokasi') or sheet_name,
+                    'lingkar_perut': row_dict.get('lingkar_perut'),
                     'derajat_kesehatan': row_dict.get('derajat_kesehatan'),
+                    'lokasi': row_dict.get('lokasi') or sheet_name,
                 }
                 obj = insert_medical_checkup(**checkup_data)
                 inserted_ids.append(obj.checkup_id)
