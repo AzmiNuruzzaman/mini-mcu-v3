@@ -148,7 +148,13 @@ def save_checkups(df: pd.DataFrame):
         raise ValueError(f"Missing required columns: {missing_cols}")
     df = _round_numeric_cols(df)
     records = df.to_dict(orient="records")
-    objs = [core_models.Checkup(**rec) for rec in records]
+    # Normalize foreign key field: use uid_id for FK
+    normalized = []
+    for rec in records:
+        if "uid" in rec and "uid_id" not in rec:
+            rec["uid_id"] = rec.pop("uid")
+        normalized.append(rec)
+    objs = [core_models.Checkup(**rec) for rec in normalized]
     core_models.Checkup.objects.bulk_create(objs, ignore_conflicts=True)
 
 def save_uploaded_checkups(df: pd.DataFrame):
@@ -188,6 +194,13 @@ def get_medical_checkups_by_uid(uid: str):
     return _round_numeric_cols(df)
 
 def insert_medical_checkup(**kwargs):
+    """Create a Checkup record.
+    Accepts either uid_id (preferred) or uid (string), and normalizes to uid_id to satisfy the ForeignKey.
+    """
+    uid = kwargs.pop("uid", None)
+    if uid is not None and "uid_id" not in kwargs:
+        # Normalize raw UID string to ForeignKey field name
+        kwargs["uid_id"] = uid
     return core_models.Checkup.objects.create(**kwargs)
 
 def delete_checkup(checkup_id: str):
