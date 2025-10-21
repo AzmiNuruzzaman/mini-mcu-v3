@@ -135,6 +135,11 @@ def dashboard(request):
     
     # Slice the DataFrame for current page
     df_page = df.iloc[start_index:end_index]
+    # Sanitize page slice to avoid NaT/UUID issues in templates
+    try:
+        df_page = sanitize_df_for_display(df_page)
+    except Exception:
+        pass
     
     # Convert DataFrame to list of dictionaries for template
     employees = df_page.to_dict('records')
@@ -1354,8 +1359,11 @@ def employee_profile(request, uid):
                 gds_n = pd.to_numeric(row.get('gula_darah_sewaktu', None), errors='coerce')
                 chol_n = pd.to_numeric(row.get('cholesterol', None), errors='coerce')
                 asam_n = pd.to_numeric(row.get('asam_urat', None), errors='coerce')
-                # Do NOT auto-compute umur; use provided XLS/master value as-is
-                umur_val = row.get('umur', None)
+                # Do NOT auto-compute umur; use provided XLS/master value as-is (take from employee master)
+                try:
+                    umur_val = (employee_clean or {}).get('umur', None)
+                except Exception:
+                    umur_val = None
 
                 # Date formatting
                 tc_dt = pd.to_datetime(row.get('tanggal_checkup'), errors='coerce')
@@ -1398,6 +1406,7 @@ def employee_profile(request, uid):
                     'derajat_kesehatan': str(dk_val) if dk_val is not None else None,
                     'tanggal_MCU': emp_tanggal_mcu,
                     'expired_MCU': emp_expired_mcu,
+                    'checkup_id': row.get('checkup_id'),
                     'status': status_val,
                 })
     except Exception:
@@ -1642,6 +1651,55 @@ def export_master_karyawan_excel(request):
         request.session["error_message"] = f"Failed to export master data: {e}"
         return redirect(reverse("manager:upload_export") + "?submenu=export_data")
 
+@require_http_methods(["GET"])
+def export_checkup_history_by_uid(request, uid):
+    """Export all historical medical checkup data for the specified UID only."""
+    if not request.session.get("authenticated") or request.session.get("user_role") != "Manager":
+        return redirect("accounts:login")
+    try:
+        from core.core_models import Karyawan
+        if not Karyawan.objects.filter(uid=uid).exists():
+            request.session['error_message'] = f"UID {uid} tidak ditemukan."
+            return redirect(reverse("manager:edit_karyawan", kwargs={"uid": uid}) + "?submenu=history")
+        df = get_medical_checkups_by_uid(uid)
+        if df is None or df.empty:
+            request.session['warning_message'] = "Tidak ada data checkup untuk UID ini."
+            return redirect(reverse("manager:edit_karyawan", kwargs={"uid": uid}) + "?submenu=history")
+        if "uid_id" in df.columns and "uid" not in df.columns:
+            df = df.rename(columns={"uid_id": "uid"})
+        excel_bytes = build_checkup_excel(df)
+        filename = f"checkup_history_{uid}.xlsx"
+        response = HttpResponse(excel_bytes, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        response["Content-Disposition"] = f"attachment; filename={filename}"
+        return response
+    except Exception as e:
+        request.session['error_message'] = f"Gagal mengekspor riwayat checkup: {e}"
+        return redirect(reverse("manager:edit_karyawan", kwargs={"uid": uid}) + "?submenu=history")
+
+@require_http_methods(["GET"])
+def export_checkup_row(request, uid, checkup_id):
+    """Export a single medical checkup row for the specified UID, safeguarding association."""
+    if not request.session.get("authenticated") or request.session.get("user_role") != "Manager":
+        return redirect("accounts:login")
+    try:
+        from core.core_models import Checkup
+        qs = Checkup.objects.filter(checkup_id=checkup_id, uid_id=uid)
+        if not qs.exists():
+            request.session['error_message'] = "Checkup tidak ditemukan untuk UID terkait."
+            return redirect(reverse("manager:edit_karyawan", kwargs={"uid": uid}) + "?submenu=history")
+        import pandas as pd
+        df = pd.DataFrame(list(qs.values()))
+        if "uid_id" in df.columns and "uid" not in df.columns:
+            df = df.rename(columns={"uid_id": "uid"})
+        excel_bytes = build_checkup_excel(df)
+        filename = f"checkup_{checkup_id}.xlsx"
+        response = HttpResponse(excel_bytes, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        response["Content-Disposition"] = f"attachment; filename={filename}"
+        return response
+    except Exception as e:
+        request.session['error_message'] = f"Gagal mengekspor data checkup: {e}"
+        return redirect(reverse("manager:edit_karyawan", kwargs={"uid": uid}) + "?submenu=history")
+
 
 
 # users_interface/manager/manager_views.py
@@ -1801,6 +1859,11 @@ def dashboard(request):
     
     # Slice the DataFrame for current page
     df_page = df.iloc[start_index:end_index]
+    # Sanitize page slice to avoid NaT/UUID issues in templates
+    try:
+        df_page = sanitize_df_for_display(df_page)
+    except Exception:
+        pass
     
     # Convert DataFrame to list of dictionaries for template
     employees = df_page.to_dict('records')

@@ -38,6 +38,9 @@ urlpatterns = [
     path("upload-medical-checkup/", manager_views.upload_medical_checkup_xls, name="upload_medical_checkup_xls"),
     path("export-checkup-data/", manager_views.export_checkup_data_excel, name="export_checkup_data"),
     path("export-master-karyawan/", manager_views.export_master_karyawan_excel, name="export_master_karyawan"),
+    # NEW: Export history by UID and single checkup
+    path("employee/<str:uid>/export-history/", manager_views.export_checkup_history_by_uid, name="export_checkup_history_by_uid"),
+    path("employee/<str:uid>/checkup/<int:checkup_id>/export/", manager_views.export_checkup_row, name="export_checkup_row"),
 
     # ===============================
     # UPLOAD LOG MANAGEMENT
