@@ -60,11 +60,22 @@
         <!-- Export Data -->
         <section>
           <h3 class="text-lg font-semibold mb-4">Export Data</h3>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div class="bg-gray-50 p-6 rounded-lg">
               <div class="text-xs text-gray-600 mb-2">download semua data checkup (sesuai dashboard)</div>
-              <a href="{% url 'nurse:export_checkup_data' %}" class="inline-block bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
-                Export All Checkup Data
+              <div class="flex gap-2">
+                <a href="{% url 'nurse:export_checkup_data' %}" class="inline-block bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
+                  Export XLS
+                </a>
+                <a href="{% url 'nurse:export_checkup_pdf' %}" class="inline-block bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors">
+                  Export PDF
+                </a>
+              </div>
+            </div>
+            <div class="bg-gray-50 p-6 rounded-lg">
+              <div class="text-xs text-gray-600 mb-2">download master data karyawan</div>
+              <a href="{% url 'nurse:export_karyawan_data' %}" class="inline-block bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
+                Export Master Karyawan (XLS)
               </a>
             </div>
             <div class="bg-gray-50 p-6 rounded-lg">

@@ -1,0 +1,35 @@
+{% extends "nurse/nurse_index.html" %}
+{% load static %}
+
+{% block page_content %}
+<div class="bg-white rounded-lg shadow_md p-6">
+  <h2 class="text-xl font-bold mb-4">Export Checkups PDF</h2>
+  {% if df %}
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            {% for col in df.columns %}
+            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ col }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+          {% for row in df.itertuples %}
+          <tr>
+            {% for col in df.columns %}
+            <td class="px-4 py-2 text-sm text-gray-700">{{ row|get_item:col }}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="mt-4">
+      <a href="{{ pdf_url }}" class="px-4 py-2 bg-red-600 text-white rounded">Download PDF</a>
+    </div>
+  {% else %}
+    <div class="p-4 bg-gray-50 border rounded text-gray-500">Tidak ada data untuk diexport.</div>
+  {% endif %}
+</div>
+{% endblock %}

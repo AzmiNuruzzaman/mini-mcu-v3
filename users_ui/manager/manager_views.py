@@ -64,6 +64,128 @@ def dashboard(request):
     active_menu = "dashboard"  # Changed to match the mapping in get_active_menu_for_view
     active_submenu = request.GET.get('submenu', 'data')
     
+    # Grafik JSON API: return processed data for chart overhaul
+    if active_submenu == 'grafik' and request.GET.get('grafik_json') == '1':
+        # Build JSON payload based on month range and UID filters
+        try:
+            df_json = load_checkups()
+        except Exception:
+            df_json = pd.DataFrame()
+        # Fallback to latest dashboard data if historical checkups are unavailable
+        if not hasattr(df_json, 'empty') or df_json.empty:
+            try:
+                df_json = get_dashboard_checkup_data()
+            except Exception:
+                df_json = pd.DataFrame()
+        now = pd.Timestamp.now()
+        default_end_month_dt = pd.Timestamp(year=now.year, month=now.month, day=1)
+        default_start_month_dt = default_end_month_dt - pd.offsets.DateOffset(months=5)
+        # Choose date column (fallback to synthetic current month if absent)
+        date_col = None
+        if not df_json.empty and 'tanggal_MCU' in df_json.columns:
+            # Robust parse: handle day-first and common dd/mm/yy formats
+            df_json['tanggal_MCU_raw'] = df_json['tanggal_MCU']
+            df_json['tanggal_MCU'] = pd.to_datetime(df_json['tanggal_MCU'], errors='coerce', dayfirst=True)
+            if df_json['tanggal_MCU'].isna().all():
+                df_json['tanggal_MCU'] = pd.to_datetime(df_json['tanggal_MCU_raw'], format='%d/%m/%y', errors='coerce')
+            date_col = 'tanggal_MCU'
+        elif not df_json.empty and 'tanggal_checkup' in df_json.columns:
+            df_json['tanggal_checkup'] = pd.to_datetime(df_json['tanggal_checkup'], errors='coerce', dayfirst=True)
+            date_col = 'tanggal_checkup'
+        else:
+            # Synthesize a month column using current month so aggregated view still works
+            df_json = df_json.copy()
+            df_json['synthetic_month'] = now.strftime('%Y-%m')
+        # Ensure status
+        try:
+            if 'status' not in df_json.columns or df_json['status'].isna().any():
+                df_json['status'] = df_json.apply(compute_status, axis=1)
+        except Exception:
+            df_json['status'] = df_json.get('status', '')
+        # Filters
+        uid = request.GET.get('uid', 'all')
+        start_month = request.GET.get('start_month', '')
+        end_month = request.GET.get('end_month', '')
+        start_dt = pd.to_datetime(start_month + '-01', errors='coerce') if start_month else default_start_month_dt
+        end_dt = pd.to_datetime(end_month + '-01', errors='coerce') if end_month else default_end_month_dt
+        end_dt_end = (end_dt + pd.offsets.MonthBegin(1)) - pd.Timedelta(days=1)
+        df_filt = df_json.copy()
+        df_filt = df_filt.dropna(subset=[date_col])
+        df_filt = df_filt[(df_filt[date_col] >= start_dt) & (df_filt[date_col] <= end_dt_end)]
+        if uid and uid != 'all':
+            df_uid = df_filt[df_filt['uid'].astype(str) == str(uid)].copy().sort_values(by=[date_col])
+            def to_float_safe(val):
+                try:
+                    return float(val)
+                except Exception:
+                    return None
+            def parse_systolic(val):
+                if pd.isna(val):
+                    return None
+                s = str(val)
+                if '/' in s:
+                    try:
+                        return float(s.split('/')[0])
+                    except Exception:
+                        return None
+                try:
+                    return float(s)
+                except Exception:
+                    return None
+            if df_uid.empty:
+                x_dates = []
+                series = {}
+                summary = {'total_employees':0,'well_count':0,'unwell_count':0}
+            else:
+                x_dates = df_uid[date_col].dt.strftime('%Y-%m-%d').fillna('').tolist()
+                series = {
+                    'gula_darah_puasa': df_uid.get('gula_darah_puasa', pd.Series([None]*len(df_uid))).apply(to_float_safe).tolist(),
+                    'gula_darah_sewaktu': df_uid.get('gula_darah_sewaktu', pd.Series([None]*len(df_uid))).apply(to_float_safe).tolist(),
+                    'tekanan_darah_sistole': df_uid.get('tekanan_darah', pd.Series([None]*len(df_uid))).apply(parse_systolic).tolist(),
+                    'lingkar_perut': df_uid.get('lingkar_perut', pd.Series([None]*len(df_uid))).apply(to_float_safe).tolist(),
+                    'cholesterol': df_uid.get('cholesterol', pd.Series([None]*len(df_uid))).apply(to_float_safe).tolist(),
+                    'asam_urat': df_uid.get('asam_urat', pd.Series([None]*len(df_uid))).apply(to_float_safe).tolist(),
+                }
+                latest_row = df_uid.iloc[-1]
+                latest_status = latest_row.get('status')
+                summary = {
+                    'total_employees': 1,
+                    'well_count': 1 if latest_status == 'Well' else 0,
+                    'unwell_count': 1 if latest_status == 'Unwell' else 0,
+                }
+            return JsonResponse({'mode':'individual','x_dates':x_dates,'series':series,'summary':summary})
+        else:
+            if df_filt.empty:
+                # If no filtered historical data, fall back to current latest data grouped into the current month
+                months_sorted = [now.strftime('%Y-%m')]
+                try:
+                    latest_df = get_dashboard_checkup_data()
+                    latest_df = latest_df.copy()
+                    if 'status' not in latest_df.columns:
+                        latest_df['status'] = latest_df.apply(compute_status, axis=1)
+                    total_employees = int(latest_df['uid'].nunique()) if not latest_df.empty else 0
+                    well_count = int((latest_df['status'] == 'Well').sum()) if not latest_df.empty else 0
+                    unwell_count = int((latest_df['status'] == 'Unwell').sum()) if not latest_df.empty else 0
+                    return JsonResponse({'mode':'aggregate','months':months_sorted,'well':[well_count],'unwell':[unwell_count],'summary':{'total_employees':total_employees,'well_count':well_count,'unwell_count':unwell_count}})
+                except Exception:
+                    return JsonResponse({'mode':'aggregate','months':[],'well':[],'unwell':[],'summary':{'total_employees':0,'well_count':0,'unwell_count':0}})
+            df_filt['month'] = (df_filt[date_col].dt.to_period('M').astype(str) if date_col else df_filt.get('synthetic_month', now.strftime('%Y-%m')))
+            df_filt = df_filt.sort_values(by=['uid'] + ([date_col] if date_col else []))
+            latest_per_uid_month = df_filt.groupby(['month','uid']).tail(1)
+            monthly_counts = latest_per_uid_month.groupby(['month','status']).size().reset_index(name='count')
+            months_sorted = sorted(monthly_counts['month'].unique())
+            well_counts = []
+            unwell_counts = []
+            for m in months_sorted:
+                sub = monthly_counts[monthly_counts['month'] == m]
+                well_counts.append(int(sub[sub['status'] == 'Well']['count'].sum()))
+                unwell_counts.append(int(sub[sub['status'] == 'Unwell']['count'].sum()))
+            latest_per_uid_range = df_filt.groupby('uid').tail(1)
+            total_employees = int(latest_per_uid_range['uid'].nunique()) if not latest_per_uid_range.empty else 0
+            well_count = int((latest_per_uid_range['status'] == 'Well').sum()) if not latest_per_uid_range.empty else 0
+            unwell_count = int((latest_per_uid_range['status'] == 'Unwell').sum()) if not latest_per_uid_range.empty else 0
+            return JsonResponse({'mode':'aggregate','months':months_sorted,'well':well_counts,'unwell':unwell_counts,'summary':{'total_employees':total_employees,'well_count':well_count,'unwell_count':unwell_count}})
+
     # Get the DataFrame
     df = get_dashboard_checkup_data()
 
@@ -150,83 +272,7 @@ def dashboard(request):
     active_nurses = len(users_df[users_df['role'] == 'nurse']) if not users_df.empty else 0
     pending_reviews = 0  # Will be updated when checkup data is uploaded
 
-    # Initialize chart data for grafik
-    grafik_chart_html = None
-    grafik_filter_mode = request.GET.get('grafik_mode', 'month')  # 'month' or 'week'
-    grafik_month = request.GET.get('grafik_month', '')  # e.g., '2025-10'
-
-    # Build time series from all checkups (not just latest) to plot trend
-    all_checkups_df = load_checkups()
-    if not all_checkups_df.empty:
-        # Ensure datetime
-        all_checkups_df['tanggal_checkup'] = pd.to_datetime(all_checkups_df['tanggal_checkup'], errors='coerce')
-        # Derive status if missing
-        if 'status' not in all_checkups_df.columns or all_checkups_df['status'].isna().any():
-            all_checkups_df['status'] = all_checkups_df.apply(compute_status, axis=1)
-        
-        # Apply optional lokasi/jabatan/status filters to grafik too, for consistency
-        graf_df = all_checkups_df.copy()
-        if filters['lokasi']:
-            graf_df = graf_df[graf_df['lokasi'] == filters['lokasi']]
-        if filters['jabatan']:
-            filt_clean = ' '.join(filters['jabatan'].split()).strip().lower()
-            # match original jabatan via lower() to be robust
-            graf_df = graf_df[graf_df['jabatan'].astype(str).str.strip().str.replace(r'\s+', ' ', regex=True).str.lower() == filt_clean]
-        if filters['status']:
-            graf_df = graf_df[graf_df['status'] == filters['status']]
-
-        # Filter by month or week if provided
-        if grafik_filter_mode == 'month' and grafik_month:
-            try:
-                month_dt = pd.to_datetime(grafik_month + '-01', errors='coerce')
-                if pd.notnull(month_dt):
-                    month_start = month_dt
-                    # end of month: add 1 month then subtract 1 day safely
-                    next_month = (month_dt + pd.offsets.MonthBegin(1))
-                    month_end = next_month - pd.Timedelta(days=1)
-                    graf_df = graf_df[(graf_df['tanggal_checkup'] >= month_start) & (graf_df['tanggal_checkup'] <= month_end)]
-            except Exception:
-                pass
-        elif grafik_filter_mode == 'week':
-            # Use ISO week filter if provided via grafik_month as 'YYYY-Www'
-            grafik_week = request.GET.get('grafik_week', '')
-            if grafik_week:
-                try:
-                    # Parse 'YYYY-Www' to a date range (ISO week)
-                    year_str, week_str = grafik_week.split('-W')
-                    year_i, week_i = int(year_str), int(week_str)
-                    # ISO week start (Monday)
-                    week_start = pd.to_datetime(f'{year_i}-W{week_i}-1', format='%G-W%V-%u', errors='coerce')
-                    week_end = week_start + pd.Timedelta(days=6)
-                    if pd.notnull(week_start):
-                        graf_df = graf_df[(graf_df['tanggal_checkup'] >= week_start) & (graf_df['tanggal_checkup'] <= week_end)]
-                except Exception:
-                    pass
-        
-        # Aggregate counts per day
-        graf_df['date'] = graf_df['tanggal_checkup'].dt.date
-        daily = graf_df.groupby(['date', 'status']).size().reset_index(name='count')
-        # Pivot to get Well vs Unwell columns
-        pivot = daily.pivot_table(index='date', columns='status', values='count', fill_value=0)
-        pivot = pivot.rename(columns={'Well': 'well', 'Unwell': 'unwell'})
-        pivot = pivot.sort_index()
-        # Ensure both expected status columns exist as Series to avoid scalar fallbacks
-        pivot = pivot.reindex(columns=['well', 'unwell'], fill_value=0)
-
-        # Build Plotly figure
-        if not pivot.empty:
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=pivot.index, y=pivot['well'], mode='lines+markers', name='Well', line=dict(color='green')))
-            fig.add_trace(go.Scatter(x=pivot.index, y=pivot['unwell'], mode='lines+markers', name='Unwell', line=dict(color='red')))
-            fig.update_layout(
-                title='Well vs Unwell Over Time',
-                xaxis_title='Tanggal',
-                yaxis_title='Total Karyawan',
-                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
-                margin=dict(l=40, r=20, t=60, b=40),
-                template='plotly_white'
-            )
-            grafik_chart_html = pio.to_html(fig, full_html=False, include_plotlyjs='cdn')
+    # Legacy grafik server-rendered code removed. Client-side Plotly fetch + render is now used via JSON API.
     
     # Department counts for donut/bar (existing)
     dept_names = []
@@ -260,6 +306,35 @@ def dashboard(request):
     except Exception:
         latest_checkup_display = latest_check_date_disp
     
+    # Grafik filter defaults and UID options
+    available_uids = []
+    try:
+        # Prefer historical checkups dataset
+        all_checkups_df_for_uids = load_checkups()
+        if hasattr(all_checkups_df_for_uids, 'empty') and not all_checkups_df_for_uids.empty and 'uid' in all_checkups_df_for_uids.columns:
+            available_uids = [str(u) for u in all_checkups_df_for_uids['uid'].dropna().unique().tolist()]
+    except Exception:
+        pass
+    # Fallbacks if none found
+    if not available_uids:
+        try:
+            df_latest = get_dashboard_checkup_data()
+            if hasattr(df_latest, 'empty') and not df_latest.empty and 'uid' in df_latest.columns:
+                available_uids = [str(u) for u in df_latest['uid'].dropna().unique().tolist()]
+        except Exception:
+            pass
+    if not available_uids:
+        try:
+            df_emps = get_employees()
+            if hasattr(df_emps, 'empty') and not df_emps.empty and 'uid' in df_emps.columns:
+                available_uids = [str(u) for u in df_emps['uid'].dropna().unique().tolist()]
+        except Exception:
+            pass
+    available_uids = sorted(set(available_uids))
+    now2 = pd.Timestamp.now()
+    default_end_month = now2.strftime('%Y-%m')
+    default_start_month = (now2 - pd.offsets.DateOffset(months=5)).strftime('%Y-%m')
+
     context = {
         'active_menu': active_menu,
         'active_submenu': active_submenu,
@@ -282,8 +357,9 @@ def dashboard(request):
         'dept_names': dept_names,
         'dept_counts': dept_counts,
         'latest_checkup_display': latest_checkup_display,
-        'grafik_chart_html': grafik_chart_html,
-        'grafik_filter_mode': grafik_filter_mode,
+        'available_uids': available_uids,
+        'default_start_month': default_start_month,
+        'default_end_month': default_end_month,
     }
     # Upload History context
     if active_submenu == 'upload_history':
@@ -1098,7 +1174,7 @@ def employee_profile(request, uid):
     active_subtab = request.GET.get("subtab", "profile")
 
     # Validate submenu
-    if active_submenu not in ["data_karyawan", "history"]:
+    if active_submenu not in ["data_karyawan", "history", "grafik"]:
         # Map legacy keys to new structure
         if active_submenu == "edit":
             active_submenu = "data_karyawan"
@@ -1113,6 +1189,79 @@ def employee_profile(request, uid):
     # Validate subtab under data_karyawan (allow profile, edit_data, edit_checkup, tambah, lokasi)
     if active_submenu == "data_karyawan" and active_subtab not in ["profile", "edit_data", "edit_checkup", "tambah", "lokasi"]:
         active_subtab = "profile"
+
+    # NEW: Handle edit/delete single checkup row from History tab
+    if request.method == "POST" and active_submenu == "history":
+        action = (request.POST.get("action") or "").strip()
+        target_id = (request.POST.get("checkup_id") or "").strip()
+        if action == "edit_row" and target_id:
+            try:
+                from core.core_models import Checkup
+                # Parse incoming fields; update only provided ones
+                def _to_float(v):
+                    try:
+                        return float(v) if v is not None and str(v).strip() != "" else None
+                    except Exception:
+                        return None
+                def _to_int(v):
+                    try:
+                        return int(v) if v is not None and str(v).strip() != "" else None
+                    except Exception:
+                        return None
+                def _to_str(v):
+                    return str(v).strip() if v is not None and str(v).strip() != "" else None
+                tanggal_checkup_raw = request.POST.get("tanggal_checkup")
+                try:
+                    tc_dt = pd.to_datetime(tanggal_checkup_raw, errors="coerce") if tanggal_checkup_raw else None
+                    tanggal_checkup_val = tc_dt.date() if pd.notna(tc_dt) else None
+                except Exception:
+                    tanggal_checkup_val = None
+                update_fields = {}
+                if tanggal_checkup_val is not None:
+                    update_fields["tanggal_checkup"] = tanggal_checkup_val
+                # Numeric/text fields
+                for key, conv in [
+                    ("tinggi", _to_float),
+                    ("berat", _to_float),
+                    ("lingkar_perut", _to_float),
+                    ("bmi", _to_float),
+                    ("umur", _to_int),
+                    ("gula_darah_puasa", _to_float),
+                    ("gula_darah_sewaktu", _to_float),
+                    ("cholesterol", _to_float),
+                    ("asam_urat", _to_float),
+                    ("tekanan_darah", _to_str),
+                    ("derajat_kesehatan", _to_str),
+                ]:
+                    val = conv(request.POST.get(key))
+                    if val is not None:
+                        update_fields[key] = val
+                if update_fields:
+                    Checkup.objects.filter(checkup_id=target_id).update(**update_fields)
+                    request.session['success_message'] = "Baris riwayat checkup berhasil diperbarui."
+                else:
+                    request.session['error_message'] = "Tidak ada perubahan yang disimpan."
+            except Exception as e:
+                request.session['error_message'] = f"Gagal menyimpan perubahan: {e}"
+        elif action == "delete_all_checkups":
+            try:
+                from core.core_models import Checkup
+                deleted_count, _ = Checkup.objects.filter(uid_id=uid).delete()
+                request.session['success_message'] = f"Berhasil menghapus semua data checkup untuk karyawan ini ({deleted_count} baris)."
+            except Exception as e:
+                request.session['error_message'] = f"Gagal menghapus semua data checkup: {e}"
+        else:
+            # Default to delete if checkup_id is provided without edit action
+            del_id = target_id
+            if del_id:
+                try:
+                    from core.queries import delete_checkup
+                    delete_checkup(str(del_id))
+                    request.session['success_message'] = "Baris riwayat checkup berhasil dihapus."
+                except Exception as e:
+                    request.session['error_message'] = f"Gagal menghapus baris riwayat: {e}"
+        # Always return to History tab after handling POST
+        return redirect(reverse("manager:edit_karyawan", kwargs={'uid': uid}) + "?submenu=history")
 
     # Handle V2 Edit Master Data submission (manager only)
     if request.method == "POST" and active_submenu == "data_karyawan" and active_subtab == "edit_data":
@@ -1447,6 +1596,75 @@ def employee_profile(request, uid):
     except Exception:
         history_dashboard = []
 
+    # Grafik tab data (month range filter)
+    grafik_chart_html = None
+    grafik_start_month = request.GET.get('start_month')
+    grafik_end_month = request.GET.get('end_month')
+    try:
+        # Default to last 6 months
+        today = datetime.today()
+        def _month_str(dt):
+            return f"{dt.year}-{dt.month:02d}"
+        if not grafik_end_month:
+            grafik_end_month = _month_str(today)
+        if not grafik_start_month:
+            grafik_start_month = _month_str(today - pd.DateOffset(months=5))
+
+        df_ts = checkups.copy() if checkups is not None else pd.DataFrame()
+        if df_ts is not None and not df_ts.empty:
+            df_ts['tanggal_checkup'] = pd.to_datetime(df_ts['tanggal_checkup'], errors='coerce')
+            # Range boundaries
+            start_dt = pd.to_datetime(grafik_start_month + '-01', errors='coerce') if grafik_start_month else None
+            end_dt = pd.to_datetime(grafik_end_month + '-01', errors='coerce') if grafik_end_month else None
+            if pd.notnull(end_dt):
+                end_dt = (end_dt + pd.offsets.MonthBegin(1)) - pd.Timedelta(days=1)
+            if pd.notnull(start_dt) and pd.notnull(end_dt):
+                df_ts = df_ts[(df_ts['tanggal_checkup'] >= start_dt) & (df_ts['tanggal_checkup'] <= end_dt)]
+
+            df_ts = df_ts.sort_values('tanggal_checkup')
+            x_vals = df_ts['tanggal_checkup']
+            gdp = pd.to_numeric(df_ts.get('gula_darah_puasa'), errors='coerce')
+            gds = pd.to_numeric(df_ts.get('gula_darah_sewaktu'), errors='coerce')
+            lp = pd.to_numeric(df_ts.get('lingkar_perut'), errors='coerce')
+            chol = pd.to_numeric(df_ts.get('cholesterol'), errors='coerce')
+            asam = pd.to_numeric(df_ts.get('asam_urat'), errors='coerce')
+            def _parse_systolic(val):
+                try:
+                    s = str(val)
+                    if '/' in s:
+                        return pd.to_numeric(s.split('/')[0], errors='coerce')
+                    return pd.to_numeric(val, errors='coerce')
+                except Exception:
+                    return pd.NA
+            td_systolic = df_ts['tekanan_darah'].apply(_parse_systolic) if 'tekanan_darah' in df_ts.columns else pd.Series([], dtype='float64')
+
+            fig = go.Figure()
+            if not x_vals.empty:
+                if gdp is not None and not gdp.empty:
+                    fig.add_trace(go.Scatter(x=x_vals, y=gdp, mode='lines+markers', name='Gula Darah Puasa'))
+                if gds is not None and not gds.empty:
+                    fig.add_trace(go.Scatter(x=x_vals, y=gds, mode='lines+markers', name='Gula Darah Sewaktu'))
+                if td_systolic is not None and not td_systolic.empty:
+                    fig.add_trace(go.Scatter(x=x_vals, y=td_systolic, mode='lines+markers', name='Tekanan Darah (Sistole)'))
+                if lp is not None and not lp.empty:
+                    fig.add_trace(go.Scatter(x=x_vals, y=lp, mode='lines+markers', name='Lingkar Perut'))
+                if chol is not None and not chol.empty:
+                    fig.add_trace(go.Scatter(x=x_vals, y=chol, mode='lines+markers', name='Cholesterol'))
+                if asam is not None and not asam.empty:
+                    fig.add_trace(go.Scatter(x=x_vals, y=asam, mode='lines+markers', name='Asam Urat'))
+
+                fig.update_layout(
+                    title='Grafik Riwayat Medical Checkup',
+                    xaxis_title='Tanggal Checkup',
+                    yaxis_title='Nilai',
+                    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+                    margin=dict(l=40, r=20, t=60, b=40),
+                    template='plotly_white'
+                )
+                grafik_chart_html = pio.to_html(fig, full_html=False, include_plotlyjs='cdn')
+    except Exception:
+        grafik_chart_html = None
+
     # Messages and lokasi options
     success_message = request.session.pop('success_message', None)
     error_message = request.session.pop('error_message', None)
@@ -1482,6 +1700,9 @@ def employee_profile(request, uid):
         "available_lokasi": available_lokasi,
         "lokasi_list": available_lokasi,
         "mcu_expiry_estimate": mcu_expiry_estimate,
+        "grafik_chart_html": grafik_chart_html,
+        "grafik_start_month": grafik_start_month,
+        "grafik_end_month": grafik_end_month,
     })
 
 # New: Add Karyawan (Data Karyawan > Tambah karyawan)
@@ -2274,7 +2495,165 @@ def dashboard(request):
 
     active_menu = "dashboard"  # Changed to match the mapping in get_active_menu_for_view
     active_submenu = request.GET.get('submenu', 'data')
-    
+
+    # Grafik JSON API: return processed data for chart overhaul
+    if active_submenu == 'grafik' and request.GET.get('grafik_json') == '1':
+        # Build JSON payload based on month range and UID filters
+        try:
+            df_json = load_checkups()
+        except Exception:
+            df_json = pd.DataFrame()
+        # Fallback to latest dashboard data if historical checkups are unavailable
+        if not hasattr(df_json, 'empty') or df_json.empty:
+            try:
+                df_json = get_dashboard_checkup_data()
+            except Exception:
+                df_json = pd.DataFrame()
+        now = pd.Timestamp.now()
+        default_end_month_dt = pd.Timestamp(year=now.year, month=now.month, day=1)
+        default_start_month_dt = default_end_month_dt - pd.offsets.DateOffset(months=5)
+        # Choose date column (fallback to synthetic current month if absent)
+        date_col = None
+        if not df_json.empty and 'tanggal_MCU' in df_json.columns:
+            df_json['tanggal_MCU'] = pd.to_datetime(df_json['tanggal_MCU'], errors='coerce')
+            date_col = 'tanggal_MCU'
+        elif not df_json.empty and 'tanggal_checkup' in df_json.columns:
+            df_json['tanggal_checkup'] = pd.to_datetime(df_json['tanggal_checkup'], errors='coerce')
+            date_col = 'tanggal_checkup'
+        else:
+            # Synthesize a month column using current month so aggregated view still works
+            df_json = df_json.copy()
+            df_json['synthetic_month'] = now.strftime('%Y-%m')
+        # Ensure status
+        try:
+            if 'status' not in df_json.columns or df_json['status'].isna().any():
+                df_json['status'] = df_json.apply(compute_status, axis=1)
+        except Exception:
+            pass
+        # Parse tekanan darah sistole when needed
+        def parse_systolic(td_val):
+            try:
+                if pd.isna(td_val):
+                    return None
+                s = str(td_val)
+                if '/' in s:
+                    return float(s.split('/')[0])
+                return float(s)
+            except Exception:
+                return None
+        # Filters
+        uid = request.GET.get('uid', 'all')
+        start_month = request.GET.get('start_month')
+        end_month = request.GET.get('end_month')
+        start_dt = pd.to_datetime(start_month + '-01', errors='coerce') if start_month else default_start_month_dt
+        end_dt = pd.to_datetime(end_month + '-01', errors='coerce') if end_month else default_end_month_dt
+        # Filter by month range (inclusive)
+        if date_col:
+            df_json = df_json[(df_json[date_col] >= start_dt) & (df_json[date_col] <= end_dt)]
+        # Individual vs aggregate
+        if uid and uid != 'all':
+            df_u = df_json[df_json['uid'].astype(str) == str(uid)].copy()
+            if df_u.empty:
+                return JsonResponse({'mode':'individual','x_dates':[],'series':{'gula_darah_puasa':[],'gula_darah_sewaktu':[],'tekanan_darah_sistole':[],'lingkar_perut':[],'cholesterol':[],'asam_urat':[]},'summary':{'total_employees':0,'well_count':0,'unwell_count':0}})
+            # Sort by date
+            if date_col:
+                df_u = df_u.sort_values(by=date_col)
+                x_dates = df_u[date_col].dt.strftime('%Y-%m-%d').tolist()
+            else:
+                x_dates = []
+            series = {
+                'gula_darah_puasa': df_u.get('gula_darah_puasa', pd.Series(dtype='float64')).tolist(),
+                'gula_darah_sewaktu': df_u.get('gula_darah_sewaktu', pd.Series(dtype='float64')).tolist(),
+                'tekanan_darah_sistole': df_u.get('tekanan_darah', pd.Series(dtype='object')).apply(parse_systolic).tolist() if 'tekanan_darah' in df_u.columns else [],
+                'lingkar_perut': df_u.get('lingkar_perut', pd.Series(dtype='float64')).tolist(),
+                'cholesterol': df_u.get('cholesterol', pd.Series(dtype='float64')).tolist(),
+                'asam_urat': df_u.get('asam_urat', pd.Series(dtype='float64')).tolist(),
+            }
+            # Summary from latest row
+            latest_row = df_u.iloc[-1]
+            total_employees = 1
+            well_count = 1 if str(latest_row.get('status')) == 'Well' else 0
+            unwell_count = 1 if str(latest_row.get('status')) == 'Unwell' else 0
+            return JsonResponse({'mode':'individual','x_dates':x_dates,'series':series,'summary':{'total_employees':total_employees,'well_count':well_count,'unwell_count':unwell_count}})
+        else:
+            # Multiline time-series across multiple karyawan for selected parameters
+            df_filt = df_json.copy()
+            if df_filt.empty or not date_col:
+                return JsonResponse({'mode':'multiline','x_dates':[],'employees':[],'series_by_employee':{}})
+            # Build unified date axis within the filtered range
+            df_filt = df_filt.dropna(subset=[date_col])
+            df_filt = df_filt.sort_values(by=[date_col, 'uid'])
+            x_dates = sorted(df_filt[date_col].dt.strftime('%Y-%m-%d').unique().tolist())
+            # Employee display names
+            # Prefer 'nama' if available; otherwise fallback to 'UID {uid}'
+            employees = []
+            try:
+                # Ensure 'nama' column exists
+                if 'nama' not in df_filt.columns:
+                    df_filt['nama'] = df_filt['uid'].astype(str).apply(lambda u: f'UID {u}')
+            except Exception:
+                pass
+            # Build series per employee, aligned to x_dates
+            series_by_employee = {}
+            uids = [str(u) for u in df_filt['uid'].dropna().astype(str).unique().tolist()]
+            for u in uids:
+                df_u = df_filt[df_filt['uid'].astype(str) == u].copy()
+                df_u = df_u.sort_values(by=[date_col])
+                # Map date -> row for fast lookup
+                date_map = {}
+                for _, row in df_u.iterrows():
+                    try:
+                        key = pd.to_datetime(row[date_col]).strftime('%Y-%m-%d')
+                    except Exception:
+                        key = None
+                    if key:
+                        date_map[key] = row
+                # Helpers
+                def to_float_safe(val):
+                    try:
+                        return float(val)
+                    except Exception:
+                        return None
+                def parse_systolic(val):
+                    try:
+                        if pd.isna(val):
+                            return None
+                        s = str(val)
+                        if '/' in s:
+                            return float(s.split('/')[0])
+                        return float(s)
+                    except Exception:
+                        return None
+                # Build aligned arrays
+                s_gp = []
+                s_gs = []
+                s_td = []
+                s_lp = []
+                s_ch = []
+                s_au = []
+                for d in x_dates:
+                    row = date_map.get(d)
+                    if row is None:
+                        s_gp.append(None); s_gs.append(None); s_td.append(None); s_lp.append(None); s_ch.append(None); s_au.append(None)
+                    else:
+                        s_gp.append(to_float_safe(row.get('gula_darah_puasa')))
+                        s_gs.append(to_float_safe(row.get('gula_darah_sewaktu')))
+                        s_td.append(parse_systolic(row.get('tekanan_darah')))
+                        s_lp.append(to_float_safe(row.get('lingkar_perut')))
+                        s_ch.append(to_float_safe(row.get('cholesterol')))
+                        s_au.append(to_float_safe(row.get('asam_urat')))
+                series_by_employee[u] = {
+                    'nama': str(df_u.iloc[-1]['nama']) if not df_u.empty else f'UID {u}',
+                    'gula_darah_puasa': s_gp,
+                    'gula_darah_sewaktu': s_gs,
+                    'tekanan_darah_sistole': s_td,
+                    'lingkar_perut': s_lp,
+                    'cholesterol': s_ch,
+                    'asam_urat': s_au,
+                }
+                employees.append({'uid': u, 'nama': series_by_employee[u]['nama']})
+            return JsonResponse({'mode':'multiline','x_dates':x_dates,'employees':employees,'series_by_employee':series_by_employee})
+
     # Get the DataFrame
     df = get_dashboard_checkup_data()
 
@@ -2387,75 +2766,26 @@ def dashboard(request):
     active_nurses = len(users_df[users_df['role'] == 'nurse']) if not users_df.empty else 0
     pending_reviews = 0  # Will be updated when checkup data is uploaded
 
-    # Grafik chart: Well vs Unwell over time (month/week filters)
-    grafik_chart_html = None
-    grafik_filter_mode = request.GET.get('grafik_mode', 'month')  # 'month' or 'week'
-    grafik_month = request.GET.get('grafik_month', '')  # e.g., '2025-10'
-
-    all_checkups_df = load_checkups()
-    if not all_checkups_df.empty:
-        # Ensure datetime for filtering/aggregation
-        all_checkups_df['tanggal_checkup'] = pd.to_datetime(all_checkups_df['tanggal_checkup'], errors='coerce')
-        # Derive status if missing
-        if 'status' not in all_checkups_df.columns or all_checkups_df['status'].isna().any():
-            all_checkups_df['status'] = all_checkups_df.apply(compute_status, axis=1)
-
-        # Apply lokasi/jabatan/status filters for consistency
-        graf_df = all_checkups_df.copy()
-        if filters.get('lokasi'):
-            graf_df = graf_df[graf_df['lokasi'] == filters['lokasi']]
-        if filters.get('jabatan'):
-            filt_clean = ' '.join(filters['jabatan'].split()).strip().lower()
-            graf_df = graf_df[graf_df['jabatan'].astype(str).str.strip().str.replace(r'\s+', ' ', regex=True).str.lower() == filt_clean]
-        if filters.get('status'):
-            graf_df = graf_df[graf_df['status'] == filters['status']]
-
-        # Filter by month or ISO week if provided
-        if grafik_filter_mode == 'month' and grafik_month:
-            try:
-                month_dt = pd.to_datetime(grafik_month + '-01', errors='coerce')
-                if pd.notnull(month_dt):
-                    month_start = month_dt
-                    next_month = (month_dt + pd.offsets.MonthBegin(1))
-                    month_end = next_month - pd.Timedelta(days=1)
-                    graf_df = graf_df[(graf_df['tanggal_checkup'] >= month_start) & (graf_df['tanggal_checkup'] <= month_end)]
-            except Exception:
-                pass
-        elif grafik_filter_mode == 'week':
-            grafik_week = request.GET.get('grafik_week', '')
-            if grafik_week:
-                try:
-                    year_str, week_str = grafik_week.split('-W')
-                    year_i, week_i = int(year_str), int(week_str)
-                    week_start = pd.to_datetime(f'{year_i}-W{week_i}-1', format='%G-W%V-%u', errors='coerce')
-                    week_end = week_start + pd.Timedelta(days=6)
-                    if pd.notnull(week_start):
-                        graf_df = graf_df[(graf_df['tanggal_checkup'] >= week_start) & (graf_df['tanggal_checkup'] <= week_end)]
-                except Exception:
-                    pass
-
-        # Aggregate counts per day
-        graf_df['date'] = graf_df['tanggal_checkup'].dt.date
-        daily = graf_df.groupby(['date', 'status']).size().reset_index(name='count')
-        pivot = daily.pivot_table(index='date', columns='status', values='count', fill_value=0)
-        pivot = pivot.rename(columns={'Well': 'well', 'Unwell': 'unwell'}).sort_index()
-        # Ensure both expected status columns exist as Series to avoid scalar fallbacks
-        pivot = pivot.reindex(columns=['well', 'unwell'], fill_value=0)
-
-        # Build Plotly figure
-        if not pivot.empty:
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=pivot.index, y=pivot['well'], mode='lines+markers', name='Well', line=dict(color='green')))
-            fig.add_trace(go.Scatter(x=pivot.index, y=pivot['unwell'], mode='lines+markers', name='Unwell', line=dict(color='red')))
-            fig.update_layout(
-                title='Well vs Unwell Over Time',
-                xaxis_title='Tanggal',
-                yaxis_title='Total Karyawan',
-                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
-                margin=dict(l=40, r=20, t=60, b=40),
-                template='plotly_white'
-            )
-            grafik_chart_html = pio.to_html(fig, full_html=False, include_plotlyjs='cdn')
+    # Grafik filter defaults and UID options for new Grafik tab
+    # Always show all employees (not just those with checkup data) with names
+    available_employees = []
+    try:
+        # Get all employees from master data
+        df_emps = get_employees()
+        if hasattr(df_emps, 'empty') and not df_emps.empty and 'uid' in df_emps.columns and 'nama' in df_emps.columns:
+            for _, row in df_emps.iterrows():
+                uid = str(row['uid']) if pd.notna(row['uid']) else ''
+                nama = str(row['nama']) if pd.notna(row['nama']) else f'UID {uid}'
+                if uid:
+                    available_employees.append({'uid': uid, 'nama': nama})
+    except Exception:
+        pass
+    
+    # Sort by name for better UX
+    available_employees = sorted(available_employees, key=lambda x: x['nama'].lower())
+    now2 = pd.Timestamp.now()
+    default_end_month = now2.strftime('%Y-%m')
+    default_start_month = (now2 - pd.offsets.DateOffset(months=5)).strftime('%Y-%m')
 
     # Initialize empty chart data since we don't have checkup data yet
     checkup_dates = []
@@ -2514,8 +2844,10 @@ def dashboard(request):
         'dept_names': dept_names,
         'dept_counts': dept_counts,
         'latest_checkup_display': latest_checkup_display,
-        'grafik_chart_html': grafik_chart_html,
-        'grafik_filter_mode': grafik_filter_mode,
+        # New Grafik UI context
+        'available_employees': available_employees,
+        'default_start_month': default_start_month,
+        'default_end_month': default_end_month,
     }
     # Upload History context
     if active_submenu == 'upload_history':

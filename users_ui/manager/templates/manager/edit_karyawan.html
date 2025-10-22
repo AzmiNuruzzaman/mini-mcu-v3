@@ -35,6 +35,11 @@
                 {% if active_submenu == 'history' %}bg-blue-600 text-white border-blue-600{% endif %}">
           History Medical Check Up
       </a>
+      <a href="{% if view_only %}?uid={{ employee.uid }}&submenu=grafik{% else %}?submenu=grafik{% endif %}" 
+         class="pb-3 px-4 font-medium text-gray-700 hover:bg-slate-100 rounded-t-md border border-slate-300 -mb-px transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300
+                {% if active_submenu == 'grafik' %}bg-blue-600 text-white border-blue-600{% endif %}">
+          Grafik
+      </a>
   </div>
 
   {% if active_submenu == 'data_karyawan' %}
@@ -497,6 +502,11 @@
       <h2 class="text-xl font-bold mb-3">History Medical Check Up</h2>
       <a href="{% url 'manager:export_checkup_history_by_uid' employee.uid %}" class="inline-flex items-center bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700 mb-3">Download seluruh riwayat (XLS)</a>
       <a href="{% url 'manager:export_checkup_history_by_uid_pdf' employee.uid %}" class="inline-flex items-center bg-yellow-600 text-white px-3 py-2 rounded hover:bg-yellow-700 mb-3 ml-2">Download seluruh riwayat (PDF)</a>
+      <form method="post" action="{% url 'manager:edit_karyawan' employee.uid %}?submenu=history" class="inline-block ml-2" onsubmit="return confirm('Yakin ingin menghapus SEMUA data checkup untuk karyawan ini? Tindakan ini tidak dapat dibatalkan.');">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete_all_checkups">
+        <button type="submit" class="inline-flex items-center bg-red-600 text-white px-3 py-2 rounded hover:bg-red-700 mb-3">Hapus semua data checkup</button>
+      </form>
       {% if history_dashboard and history_dashboard|length > 0 %}
       <div class="overflow-x-auto">
         <table class="min-w-full bg-white">
@@ -527,39 +537,43 @@
           </thead>
           <tbody class="divide-y divide-gray-200">
             {% for row in history_dashboard %}
-            <tr>
+            <tr id="row-{{ row.checkup_id }}">
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ forloop.counter }}</td>
               <td class="px-6 py-4 whitespace-nowrap">{{ row.uid }}</td>
               <td class="px-6 py-4 whitespace-nowrap">{{ row.nama|default:"-" }}</td>
               <td class="px-6 py-4 whitespace-nowrap">{{ row.jabatan|default:"-" }}</td>
               <td class="px-6 py-4 whitespace-nowrap">{{ row.lokasi|default:"-" }}</td>
               <td class="px-6 py-4 whitespace-nowrap">{{ row.tanggal_lahir|default:"-" }}</td>
-              <td class="px-6 py-4 whitespace-nowrap">{{ row.umur|default:"-" }}</td>
-              <td class="px-6 py-4 whitespace-nowrap">{{ row.bmi|default:"-" }}</td>
-              <td class="px-6 py-4 whitespace-nowrap">{{ row.bmi_category|default:"-" }}</td>
-              <td class="px-6 py-4 whitespace-nowrap">{{ row.tanggal_checkup|default:"-" }}</td>
-              <td class="px-6 py-4 whitespace-nowrap">{{ row.lingkar_perut|default:"-" }}</td>
-              <td class="px-6 py-4 whitespace-nowrap">{{ row.gula_darah_puasa|default:"-" }}</td>
-              <td class="px-6 py-4 whitespace-nowrap">{{ row.gula_darah_sewaktu|default:"-" }}</td>
-              <td class="px-6 py-4 whitespace-nowrap">{{ row.cholesterol|default:"-" }}</td>
-              <td class="px-6 py-4 whitespace-nowrap">{{ row.asam_urat|default:"-" }}</td>
-              <td class="px-6 py-4 whitespace-nowrap">{{ row.tekanan_darah|default:"-" }}</td>
               <td class="px-6 py-4 whitespace-nowrap">
-                {% with dk=row.derajat_kesehatan|default:""|upper %}
-                  {% if dk == "P1" or dk == "P2" or dk == "P3" %}
-                    <span class="text-green-600 font-semibold">{{ dk }}</span>
-                  {% elif dk == "P4" %}
-                    <span class="text-yellow-600 font-semibold">{{ dk }}</span>
-                  {% elif dk == "P5" %}
-                    <span class="text-orange-600 font-semibold">{{ dk }}</span>
-                  {% elif dk == "P6" or dk == "P7" %}
-                    <span class="text-red-600 font-semibold">{{ dk }}</span>
-                  {% elif dk %}
-                    <span class="text-gray-700 font-semibold">{{ dk }}</span>
-                  {% else %}
-                    <span class="text-gray-400 italic">-</span>
-                  {% endif %}
-                {% endwith %}
+                <input type="number" id="umur-{{ row.checkup_id }}" value="{{ row.umur|default:'' }}" class="w-24 border px-2 py-1 rounded" disabled />
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <input type="number" step="0.01" id="bmi-{{ row.checkup_id }}" value="{{ row.bmi|default:'' }}" class="w-24 border px-2 py-1 rounded" disabled />
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">{{ row.bmi_category|default:"-" }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <input type="text" id="tanggal_checkup-{{ row.checkup_id }}" value="{{ row.tanggal_checkup|default:'' }}" placeholder="dd/mm/yy atau yyyy-mm-dd" class="w-32 border px-2 py-1 rounded" disabled />
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <input type="number" step="0.01" id="lingkar_perut-{{ row.checkup_id }}" value="{{ row.lingkar_perut|default:'' }}" class="w-24 border px-2 py-1 rounded" disabled />
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <input type="number" step="0.01" id="gula_darah_puasa-{{ row.checkup_id }}" value="{{ row.gula_darah_puasa|default:'' }}" class="w-24 border px-2 py-1 rounded" disabled />
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <input type="number" step="0.01" id="gula_darah_sewaktu-{{ row.checkup_id }}" value="{{ row.gula_darah_sewaktu|default:'' }}" class="w-24 border px-2 py-1 rounded" disabled />
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <input type="number" step="0.01" id="cholesterol-{{ row.checkup_id }}" value="{{ row.cholesterol|default:'' }}" class="w-24 border px-2 py-1 rounded" disabled />
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <input type="number" step="0.01" id="asam_urat-{{ row.checkup_id }}" value="{{ row.asam_urat|default:'' }}" class="w-24 border px-2 py-1 rounded" disabled />
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <input type="text" id="tekanan_darah-{{ row.checkup_id }}" value="{{ row.tekanan_darah|default:'' }}" class="w-28 border px-2 py-1 rounded" disabled />
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <input type="text" id="derajat_kesehatan-{{ row.checkup_id }}" value="{{ row.derajat_kesehatan|default:'' }}" class="w-20 border px-2 py-1 rounded" disabled />
               </td>
               <td class="px-6 py-4 whitespace-nowrap">{{ row.tanggal_MCU|default:"-" }}</td>
               <td class="px-6 py-4 whitespace-nowrap">{{ row.expired_MCU|default:"-" }}</td>
@@ -576,6 +590,30 @@
                 {% if row.checkup_id %}
                   <a href="{% url 'manager:export_checkup_row' employee.uid row.checkup_id %}" class="inline-flex items-center bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600" title="Download baris ini">XLS</a>
                   <a href="{% url 'manager:export_checkup_row_pdf' employee.uid row.checkup_id %}" class="inline-flex items-center bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600 ml-2" title="Download baris ini (PDF)">PDF</a>
+                  <form method="post" action="{% url 'manager:edit_karyawan' employee.uid %}?submenu=history" class="inline-block ml-2" onsubmit="return confirm('Yakin ingin menghapus baris riwayat ini?');">
+                    {% csrf_token %}
+                    <input type="hidden" name="checkup_id" value="{{ row.checkup_id }}" />
+                    <button type="submit" class="inline-flex items-center bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700" title="Hapus baris ini">Hapus</button>
+                  </form>
+                  <button type="button" id="editbtn-{{ row.checkup_id }}" class="inline-flex items-center bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 ml-2" onclick="toggleEditRow('{{ row.checkup_id }}')">Edit</button>
+                  <form id="saveform-{{ row.checkup_id }}" method="post" action="{% url 'manager:edit_karyawan' employee.uid %}?submenu=history" class="inline-block ml-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="edit_row" />
+                    <input type="hidden" name="checkup_id" value="{{ row.checkup_id }}" />
+                    <input type="hidden" name="tanggal_checkup" />
+                    <input type="hidden" name="tinggi" />
+                    <input type="hidden" name="berat" />
+                    <input type="hidden" name="lingkar_perut" />
+                    <input type="hidden" name="bmi" />
+                    <input type="hidden" name="umur" />
+                    <input type="hidden" name="gula_darah_puasa" />
+                    <input type="hidden" name="gula_darah_sewaktu" />
+                    <input type="hidden" name="cholesterol" />
+                    <input type="hidden" name="asam_urat" />
+                    <input type="hidden" name="tekanan_darah" />
+                    <input type="hidden" name="derajat_kesehatan" />
+                    <button type="button" id="savebtn-{{ row.checkup_id }}" class="inline-flex items-center bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 hidden" onclick="submitEditRow('{{ row.checkup_id }}')">Save</button>
+                  </form>
                 {% else %}
                   <span class="text-gray-400 italic">-</span>
                 {% endif %}
@@ -589,6 +627,57 @@
         <div class="p-4 bg-gray-50 border rounded text-gray-500">
           Belum ada data medical checkup.
         </div>
+      {% endif %}
+      <script>
+        function toggleEditRow(id) {
+          var fields = ['umur','bmi','tanggal_checkup','lingkar_perut','gula_darah_puasa','gula_darah_sewaktu','cholesterol','asam_urat','tekanan_darah','derajat_kesehatan','tinggi','berat'];
+          fields.forEach(function(f){
+            var el = document.getElementById(f+'-'+id);
+            if (el) el.disabled = !el.disabled;
+          });
+          var editBtn = document.getElementById('editbtn-'+id);
+          var saveBtn = document.getElementById('savebtn-'+id);
+          if (editBtn && saveBtn) {
+            if (saveBtn.classList.contains('hidden')) {
+              saveBtn.classList.remove('hidden');
+              editBtn.classList.add('hidden');
+            } else {
+              saveBtn.classList.add('hidden');
+              editBtn.classList.remove('hidden');
+            }
+          }
+        }
+        function submitEditRow(id) {
+          var form = document.getElementById('saveform-'+id);
+          if (!form) return;
+          var map = ['tanggal_checkup','tinggi','berat','lingkar_perut','bmi','umur','gula_darah_puasa','gula_darah_sewaktu','cholesterol','asam_urat','tekanan_darah','derajat_kesehatan'];
+          map.forEach(function(f){
+            var vis = document.getElementById(f + '-' + id);
+            var hid = form.querySelector('input[name="'+f+'"]');
+            if (vis && hid) hid.value = vis.value;
+          });
+          form.submit();
+        }
+      </script>
+    </div>
+
+  <!-- Grafik Content -->
+  <div id="grafik-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4 {% if active_submenu != 'grafik' %}hidden{% endif %}">
+      <h2 class="text-xl font-bold mb-3">Grafik Riwayat Medical Check Up</h2>
+      <form method="get" class="mb-4 flex items-center gap-2">
+        <input type="hidden" name="submenu" value="grafik"/>
+        <label class="font-medium">Range Bulan:</label>
+        <input type="month" name="start_month" value="{{ grafik_start_month }}" class="border px-2 py-1 rounded">
+        <span class="mx-1">s/d</span>
+        <input type="month" name="end_month" value="{{ grafik_end_month }}" class="border px-2 py-1 rounded">
+        <button type="submit" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Terapkan</button>
+      </form>
+      {% if grafik_chart_html %}
+        <div class="w-full overflow-x-auto">
+          {{ grafik_chart_html|safe }}
+        </div>
+      {% else %}
+        <div class="p-4 bg-gray-50 border rounded text-gray-500">Belum ada data grafik untuk range ini.</div>
       {% endif %}
   </div>
 </div>

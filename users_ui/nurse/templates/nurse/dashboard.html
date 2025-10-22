@@ -205,7 +205,7 @@
         {% if total_pages > 1 %}
         <div class="fixed bottom-6 left-1/2 -translate-x-1/2 transform z-40 flex justify-center items-center gap-2 bg-white/90 backdrop-blur-sm rounded-full shadow-md px-4 py-2 border border-gray-200">
             {% if current_page > 1 %}
-            <a href="?submenu={{ active_submenu }}&page={{ current_page|add:'-1' }}{% if filters.nama %}&nama={{ filters.nama }}{% endif %}{% if filters.jabatan %}&jabatan={{ filters.jabatan }}{% endif %}{% if filters.lokasi %}&lokasi={{ filters.lokasi }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.expiry %}&expiry={{ filters.expiry }}{% endif %}"
+            <a href="?submenu={{ active_submenu }}&page={{ current_page|add:'-1' }}{% if current_filters.nama %}&nama={{ current_filters.nama }}{% endif %}{% if current_filters.jabatan %}&jabatan={{ current_filters.jabatan }}{% endif %}{% if current_filters.lokasi %}&lokasi={{ current_filters.lokasi }}{% endif %}{% if current_filters.status %}&status={{ current_filters.status }}{% endif %}{% if current_filters.expiry %}&expiry={{ current_filters.expiry }}{% endif %}"
                class="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">
                 Sebelumnya
             </a>
@@ -216,7 +216,7 @@
             </span>
 
             {% if current_page < total_pages %}
-            <a href="?submenu={{ active_submenu }}&page={{ current_page|add:'1' }}{% if filters.nama %}&nama={{ filters.nama }}{% endif %}{% if filters.jabatan %}&jabatan={{ filters.jabatan }}{% endif %}{% if filters.lokasi %}&lokasi={{ filters.lokasi }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.expiry %}&expiry={{ filters.expiry }}{% endif %}"
+            <a href="?submenu={{ active_submenu }}&page={{ current_page|add:'1' }}{% if current_filters.nama %}&nama={{ current_filters.nama }}{% endif %}{% if current_filters.jabatan %}&jabatan={{ current_filters.jabatan }}{% endif %}{% if current_filters.lokasi %}&lokasi={{ current_filters.lokasi }}{% endif %}{% if current_filters.status %}&status={{ current_filters.status }}{% endif %}{% if current_filters.expiry %}&expiry={{ current_filters.expiry }}{% endif %}"
                class="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">
                 Berikutnya
             </a>
@@ -226,54 +226,52 @@
     </div>
 
     <!-- Grafik Content -->
-    <div id="grafik-content" class="{% if active_submenu != 'grafik' %}hidden{% endif %}">
-        <div class="flex flex-wrap items-center gap-3 mb-4">
-            <form method="get" class="flex flex-wrap items-center gap-2">
-                <input type="hidden" name="submenu" value="grafik" />
-                <label class="text-sm text-gray-700">Mode:</label>
-                <select name="grafik_mode" class="px-2 py-1 border rounded">
-                    <option value="month" {% if request.GET.grafik_mode|default:'month' == 'month' %}selected{% endif %}>Month</option>
-                    <option value="week" {% if request.GET.grafik_mode == 'week' %}selected{% endif %}>Week</option>
-                </select>
-                <div class="flex items-center gap-2">
-                    <label class="text-sm text-gray-700">Month:</label>
-                    <input type="month" name="grafik_month" value="{{ request.GET.grafik_month }}" class="px-2 py-1 border rounded" />
-                </div>
-                <div class="flex items-center gap-2">
-                    <label class="text-sm text-gray-700">Week:</label>
-                    <input type="week" name="grafik_week" value="{{ request.GET.grafik_week }}" class="px-2 py-1 border rounded" />
-                </div>
-                <button type="submit" class="px-3 py-1 bg-blue-600 text-white rounded">Apply</button>
-            </form>
-        </div>
-        <!-- Line visibility toggles -->
-        <div class="flex items-center gap-4 mb-2">
-            <label class="flex items-center gap-2 text-sm text-gray-700">
-                <input id="toggle-well" type="checkbox" class="rounded" checked>
-                Tampilkan Well
-            </label>
-            <label class="flex items-center gap-2 text-sm text-gray-700">
-                <input id="toggle-unwell" type="checkbox" class="rounded" checked>
-                Tampilkan Unwell
-            </label>
-        </div>
-        <div id="grafik-chart" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4">
-            {% if grafik_chart_html %}
-                {{ grafik_chart_html|safe }}
-            {% else %}
-                <p class="text-gray-600">No data available for the selected filters.</p>
-            {% endif %}
-        </div>
-    </div>
-</div>
+    <div id="grafik-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4 {% if active_submenu != 'grafik' %}hidden{% endif %}">
+      <h2 class="text-xl font-bold mb-3">Grafik</h2>
+      <form id="grafik-filter-form" class="mb-4 flex items-center gap-2 flex-wrap">
+        <label class="font-medium">Range Bulan:</label>
+        <input type="month" id="start_month" name="start_month" value="{{ default_start_month }}" class="border px-2 py-1 rounded">
+        <span class="mx-1">s/d</span>
+        <input type="month" id="end_month" name="end_month" value="{{ default_end_month }}" class="border px-2 py-1 rounded">
+        <label class="font-medium ml-4">Karyawan:</label>
+        <select id="uid_select" name="uid" class="border px-2 py-1 rounded">
+          <option value="all">Semua Karyawan</option>
+          {% for employee in available_employees %}
+          <option value="{{ employee.uid }}">{{ employee.nama }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Terapkan</button>
+      </form>
 
+      <div id="parameter-selector" class="mb-4 flex items-center gap-2 flex-wrap">
+        <label class="font-medium">Parameter:</label>
+        <!-- Colorful chips with double-click isolate behavior -->
+        <button type="button" class="param-chip selected px-2 py-1 rounded text-white" data-key="gula_darah_puasa" data-color="#3367d6" style="background-color:#3367d6">Gula Darah Puasa</button>
+        <button type="button" class="param-chip selected px-2 py-1 rounded text-white" data-key="gula_darah_sewaktu" data-color="#7baaf7" style="background-color:#7baaf7">Gula Darah Sewaktu</button>
+        <button type="button" class="param-chip selected px-2 py-1 rounded text-white" data-key="tekanan_darah_sistole" data-color="#ef6c00" style="background-color:#ef6c00">Tekanan Darah (Sistole)</button>
+        <button type="button" class="param-chip selected px-2 py-1 rounded text-white" data-key="lingkar_perut" data-color="#8e24aa" style="background-color:#8e24aa">Lingkar Perut</button>
+        <button type="button" class="param-chip selected px-2 py-1 rounded text-white" data-key="cholesterol" data-color="#2e7d32" style="background-color:#2e7d32">Cholesterol</button>
+        <button type="button" class="param-chip selected px-2 py-1 rounded text-white" data-key="asam_urat" data-color="#c62828" style="background-color:#c62828">Asam Urat</button>
+      </div>
+
+      <div id="grafik-chart" class="w-full overflow-x-auto min-h-[300px] mb-4">
+        <div class="p-4 bg-gray-50 border rounded text-gray-500" id="grafik-placeholder">
+          Pilih range bulan dan karyawan, lalu klik "Terapkan" untuk menampilkan grafik.
+        </div>
+      </div>
+
+      <!-- Summary cards removed per new requirements -->
+    </div>
+
+
+<!-- Plotly CDN for charts -->
+<script src="https://cdn.plot.ly/plotly-2.20.0.min.js"></script>
 <script>
   document.addEventListener('DOMContentLoaded', function() {
-    // Row click navigation to employee profile (replicate manager behavior)
+    // Row click navigation to employee profile
     const rows = document.querySelectorAll('tr.dashboard-row[data-url]');
     rows.forEach(row => {
       row.addEventListener('click', function(e) {
-        // Avoid navigating when clicking interactive elements
         const isInteractive = e.target.closest('a, button, input, select, textarea');
         if (isInteractive) return;
         const url = row.getAttribute('data-url');
@@ -283,22 +281,187 @@
       });
     });
 
-    // Plotly line visibility toggles
-    const chartContainer = document.getElementById('grafik-chart');
-    const graphDiv = chartContainer ? chartContainer.querySelector('.js-plotly-plot') : null;
-    const toggleWell = document.getElementById('toggle-well');
-    const toggleUnwell = document.getElementById('toggle-unwell');
-    if (graphDiv && toggleWell && toggleUnwell && window.Plotly) {
-      const applyVisibility = () => {
-        // Trace indices: 0 = Well, 1 = Unwell
-        Plotly.restyle(graphDiv, { visible: toggleWell.checked ? true : 'legendonly' }, [0]);
-        Plotly.restyle(graphDiv, { visible: toggleUnwell.checked ? true : 'legendonly' }, [1]);
-      };
-      toggleWell.addEventListener('change', applyVisibility);
-      toggleUnwell.addEventListener('change', applyVisibility);
-      // Initialize based on default checked state
-      applyVisibility();
+    // Grafik: dynamic fetch + render
+    const chartEl = document.getElementById('grafik-chart');
+
+    function getSelectedParams() {
+      const chips = document.querySelectorAll('.param-chip');
+      const keys = [];
+      chips.forEach(chip => { if (chip.classList.contains('selected')) keys.push(chip.getAttribute('data-key')); });
+      return keys;
     }
+
+    function renderIndividual(data, selectedKeys) {
+      const x = data.x_dates || [];
+      const s = data.series || {};
+      const traces = [];
+      const seriesMeta = [
+        { key: 'gula_darah_puasa', name: 'Gula Darah Puasa', color: '#3367d6' },
+        { key: 'gula_darah_sewaktu', name: 'Gula Darah Sewaktu', color: '#7baaf7' },
+        { key: 'tekanan_darah_sistole', name: 'Tekanan Darah (Sistole)', color: '#ef6c00' },
+        { key: 'lingkar_perut', name: 'Lingkar Perut', color: '#8e24aa' },
+        { key: 'cholesterol', name: 'Cholesterol', color: '#2e7d32' },
+        { key: 'asam_urat', name: 'Asam Urat', color: '#c62828' },
+      ];
+      const selected = selectedKeys && selectedKeys.length ? selectedKeys : seriesMeta.map(m => m.key);
+      seriesMeta.forEach(meta => {
+        if (!selected.includes(meta.key)) return;
+        traces.push({
+          x: x,
+          y: (s[meta.key] || []).map(v => v === null ? null : Number(v)),
+          mode: 'lines+markers',
+          name: meta.name,
+          line: { color: meta.color },
+          connectgaps: false,
+        });
+      });
+      const layout = {
+        title: 'Grafik',
+        xaxis: { title: 'Tanggal MCU', type: 'category' },
+        yaxis: { title: 'Nilai Parameter' },
+        legend: { orientation: 'h', yanchor: 'bottom', y: 1.02, xanchor: 'right', x: 1 },
+        margin: { l: 40, r: 20, t: 60, b: 40 },
+        template: 'plotly_white'
+      };
+      Plotly.newPlot(chartEl, traces, layout, { responsive: true });
+    }
+
+    function renderMultiLine(data, selectedKeys) {
+      const x = data.x_dates || [];
+      const seriesByEmployee = data.series_by_employee || {};
+      const traces = [];
+      const activeParam = (selectedKeys && selectedKeys.length) ? selectedKeys[0] : 'gula_darah_puasa';
+      Object.keys(seriesByEmployee).forEach(uid => {
+        const emp = seriesByEmployee[uid] || {};
+        const y = (emp[activeParam] || []).map(v => v === null ? null : Number(v));
+        const name = emp.nama || uid;
+        traces.push({
+          x: x,
+          y: y,
+          mode: 'lines+markers',
+          name: name,
+          connectgaps: false,
+        });
+      });
+      const layout = {
+        title: 'Grafik',
+        xaxis: { title: 'Tanggal MCU', type: 'category' },
+        yaxis: { title: 'Nilai Parameter' },
+        legend: { orientation: 'h', yanchor: 'bottom', y: 1.02, xanchor: 'right', x: 1 },
+        margin: { l: 40, r: 20, t: 60, b: 40 },
+        template: 'plotly_white'
+      };
+      Plotly.newPlot(chartEl, traces, layout, { responsive: true });
+    }
+
+    async function fetchGrafik(params) {
+      const url = new URL(window.location.pathname, window.location.origin);
+      url.searchParams.set('submenu', 'grafik');
+      url.searchParams.set('grafik_json', '1');
+      Object.entries(params || {}).forEach(([k, v]) => {
+        if (v != null && v !== '') url.searchParams.set(k, v);
+      });
+      const placeholder = document.getElementById('grafik-placeholder');
+      if (placeholder) {
+        placeholder.innerHTML = '<div class="text-gray-600">Memuat data grafik...</div>';
+      }
+      try {
+        const resp = await fetch(url.toString(), { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        const data = await resp.json();
+        if (placeholder) { placeholder.style.display = 'none'; }
+        const selected = getSelectedParams();
+        if (data.mode === 'individual') {
+          renderIndividual(data, selected);
+        } else if (data.mode === 'multiline') {
+          renderMultiLine(data, selected);
+        }
+        window._grafik_last = { mode: data.mode, data };
+      } catch (e) {
+        if (placeholder) {
+          placeholder.innerHTML = '<div class="text-red-600">Gagal memuat data grafik.</div>';
+          placeholder.style.display = 'block';
+        }
+      }
+    }
+
+    const filterForm = document.getElementById('grafik-filter-form');
+    if (filterForm) {
+      filterForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const uid = document.getElementById('uid_select').value;
+        const startMonth = document.getElementById('start_month').value;
+        const endMonth = document.getElementById('end_month').value;
+        fetchGrafik({ uid: uid, start_month: startMonth, end_month: endMonth });
+      });
+    }
+
+    const paramSelector = document.getElementById('parameter-selector');
+    if (paramSelector) {
+      // Visual helper
+      const applyChipVisual = (chip) => {
+        const color = chip.getAttribute('data-color') || '#888';
+        if (chip.classList.contains('selected')) {
+          chip.style.backgroundColor = color;
+          chip.classList.remove('opacity-60');
+        } else {
+          chip.style.backgroundColor = color;
+          chip.classList.add('opacity-60');
+        }
+      };
+      // Initialize visuals
+      paramSelector.querySelectorAll('.param-chip').forEach(applyChipVisual);
+
+      const rerender = () => {
+        const last = window._grafik_last;
+        const selected = getSelectedParams();
+        if (last && last.mode === 'individual') {
+          renderIndividual(last.data, selected);
+        } else if (last && last.mode === 'multiline') {
+          // Ensure only one active parameter for multiline view
+          const one = selected.length ? [selected[0]] : ['gula_darah_puasa'];
+          renderMultiLine(last.data, one);
+        }
+      };
+
+      // Click: toggle (individual allows multi; multiline enforces single)
+      paramSelector.addEventListener('click', function(e) {
+        const chip = e.target.closest('.param-chip');
+        if (!chip) return;
+        const last = window._grafik_last;
+        if (last && last.mode === 'multiline') {
+          // Single selection only
+          paramSelector.querySelectorAll('.param-chip').forEach(c => {
+            c.classList.remove('selected');
+            applyChipVisual(c);
+          });
+          chip.classList.add('selected');
+          applyChipVisual(chip);
+        } else {
+          // Toggle selection
+          chip.classList.toggle('selected');
+          // Prevent unselecting all; keep at least one selected
+          const anySelected = getSelectedParams().length > 0;
+          if (!anySelected) chip.classList.add('selected');
+          applyChipVisual(chip);
+        }
+        rerender();
+      });
+
+      // Double-click: isolate this parameter (select only this)
+      paramSelector.addEventListener('dblclick', function(e) {
+        const chip = e.target.closest('.param-chip');
+        if (!chip) return;
+        paramSelector.querySelectorAll('.param-chip').forEach(c => {
+          c.classList.remove('selected');
+          applyChipVisual(c);
+        });
+        chip.classList.add('selected');
+        applyChipVisual(chip);
+        rerender();
+      });
+    }
+
+    // No initial auto-load - user must click "Terapkan" to see chart
   });
 </script>
 {% endblock %}

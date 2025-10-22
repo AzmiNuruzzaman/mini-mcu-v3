@@ -212,8 +212,15 @@ def save_uploaded_checkups(df: pd.DataFrame):
         save_checkups(df)
 
 def get_medical_checkups_by_uid(uid: str):
-    qs = core_models.Checkup.objects.filter(uid_id=uid).order_by("-tanggal_checkup")
+    qs = core_models.Checkup.objects.filter(uid_id=str(uid)).order_by("-tanggal_checkup")
     df = pd.DataFrame(list(qs.values()))
+    # Normalize foreign key column name for downstream consistency
+    if not df.empty and 'uid_id' in df.columns:
+        df = df.rename(columns={'uid_id': 'uid'})
+    # Ensure date columns are parsed to date to avoid tz/utcoffset issues
+    for col in ["tanggal_checkup", "tanggal_lahir"]:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce").dt.date
     return _round_numeric_cols(df)
 
 def insert_medical_checkup(**kwargs):

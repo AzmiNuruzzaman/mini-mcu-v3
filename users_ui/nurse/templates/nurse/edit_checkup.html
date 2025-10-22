@@ -1,0 +1,69 @@
+{% extends "nurse/nurse_index.html" %}
+{% load static %}
+
+{% block page_content %}
+<div class="bg-white rounded-lg shadow_md p-6">
+  <h2 class="text-xl font-bold mb-4">Edit Checkup</h2>
+  {% if checkup %}
+  <form method="post" class="space-y-4">
+    {% csrf_token %}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700">Tanggal Checkup</label>
+        <input type="date" name="tanggal_checkup" value="{{ checkup.tanggal_checkup|date:'Y-m-d' }}" class="w-full px-3 py-2 border rounded" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700">Tinggi (cm)</label>
+        <input type="number" step="0.01" name="tinggi" value="{{ checkup.tinggi }}" class="w-full px-3 py-2 border rounded" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700">Berat (kg)</label>
+        <input type="number" step="0.01" name="berat" value="{{ checkup.berat }}" class="w-full px-3 py-2 border rounded" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700">Lingkar Perut (cm)</label>
+        <input type="number" step="0.01" name="lingkar_perut" value="{{ checkup.lingkar_perut }}" class="w-full px-3 py-2 border rounded" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700">BMI</label>
+        <input type="number" step="0.01" name="bmi" value="{{ checkup.bmi }}" class="w-full px-3 py-2 border rounded" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700">Umur</label>
+        <input type="number" name="umur" value="{{ checkup.umur }}" class="w-full px-3 py-2 border rounded" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700">Gula Darah Puasa</label>
+        <input type="number" step="0.01" name="gula_darah_puasa" value="{{ checkup.gula_darah_puasa }}" class="w-full px-3 py-2 border rounded" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700">Gula Darah Sewaktu</label>
+        <input type="number" step="0.01" name="gula_darah_sewaktu" value="{{ checkup.gula_darah_sewaktu }}" class="w-full px-3 py-2 border rounded" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700">Cholesterol</label>
+        <input type="number" step="0.01" name="cholesterol" value="{{ checkup.cholesterol }}" class="w-full px-3 py-2 border rounded" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700">Asam Urat</label>
+        <input type="number" step="0.01" name="asam_urat" value="{{ checkup.asam_urat }}" class="w-full px-3 py-2 border rounded" />
+      </div>
+      <div class="md:col-span-2">
+        <label class="block text-sm font-medium text-gray-700">Tekanan Darah</label>
+        <input type="text" name="tekanan_darah" value="{{ checkup.tekanan_darah }}" class="w-full px-3 py-2 border rounded" />
+      </div>
+      <div class="md:col-span-2">
+        <label class="block text-sm font-medium text-gray-700">Derajat Kesehatan</label>
+        <input type="text" name="derajat_kesehatan" value="{{ checkup.derajat_kesehatan }}" class="w-full px-3 py-2 border rounded" />
+      </div>
+    </div>
+    <div class="flex gap-3 mt-4">
+      <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">Simpan</button>
+      <a href="{% url 'nurse:karyawan_detail' checkup.uid_id %}?submenu=history" class="px-4 py-2 bg-gray-300 text-gray-700 rounded">Batal</a>
+    </div>
+  </form>
+  {% else %}
+    <div class="p-4 bg-gray-50 border rounded text-gray-500">Checkup tidak ditemukan.</div>
+  {% endif %}
+</div>
+{% endblock %}

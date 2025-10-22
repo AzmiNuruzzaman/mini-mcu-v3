@@ -30,7 +30,7 @@ from core.helpers import (
 from core import checkup_uploader
 from users_ui.qr.qr_views import qr_detail_view, qr_bulk_download_view
 from users_ui.qr.qr_utils import generate_qr_bytes
-from utils.export_utils import generate_karyawan_template_excel, export_checkup_data_excel as build_checkup_excel
+from utils.export_utils import generate_karyawan_template_excel, export_checkup_data_excel as build_checkup_excel, export_checkup_data_pdf as build_checkup_pdf
 
 # Plotly for grafik replication
 import plotly.graph_objects as go
@@ -47,6 +47,134 @@ def nurse_index(request):
 
     # Replicate manager-style dashboard submenu handling
     active_submenu = request.GET.get("submenu", "data")
+
+    # Grafik JSON API: replicate Manager Grafik for Nurse dashboard
+    if active_submenu == 'grafik' and request.GET.get('grafik_json') == '1':
+        try:
+            df_json = load_checkups()
+        except Exception:
+            df_json = pd.DataFrame()
+        if df_json is None or df_json.empty:
+            try:
+                df_json = get_dashboard_checkup_data()
+            except Exception:
+                df_json = pd.DataFrame()
+        now = pd.Timestamp.now()
+        default_end_month_dt = pd.Timestamp(year=now.year, month=now.month, day=1)
+        default_start_month_dt = default_end_month_dt - pd.offsets.DateOffset(months=5)
+        # Choose date column and robustly parse
+        date_col = None
+        if not df_json.empty and 'tanggal_MCU' in df_json.columns:
+            df_json['tanggal_MCU_raw'] = df_json['tanggal_MCU']
+            df_json['tanggal_MCU'] = pd.to_datetime(df_json['tanggal_MCU'], errors='coerce', dayfirst=True)
+            if df_json['tanggal_MCU'].isna().all():
+                df_json['tanggal_MCU'] = pd.to_datetime(df_json['tanggal_MCU_raw'], format='%d/%m/%y', errors='coerce')
+            date_col = 'tanggal_MCU'
+        elif not df_json.empty and 'tanggal_checkup' in df_json.columns:
+            df_json['tanggal_checkup'] = pd.to_datetime(df_json['tanggal_checkup'], errors='coerce', dayfirst=True)
+            date_col = 'tanggal_checkup'
+        else:
+            df_json = df_json.copy()
+            df_json['synthetic_month'] = now.strftime('%Y-%m')
+        # Ensure status column exists
+        try:
+            if 'status' not in df_json.columns or df_json['status'].isna().any():
+                df_json['status'] = df_json.apply(compute_status, axis=1)
+        except Exception:
+            pass
+        # Filters
+        uid = request.GET.get('uid', 'all')
+        start_month = request.GET.get('start_month')
+        end_month = request.GET.get('end_month')
+        start_dt = pd.to_datetime(start_month + '-01', errors='coerce') if start_month else default_start_month_dt
+        end_dt = pd.to_datetime(end_month + '-01', errors='coerce') if end_month else default_end_month_dt
+        if date_col:
+            df_json = df_json[(df_json[date_col] >= start_dt) & (df_json[date_col] <= end_dt)]
+        # Individual vs multiline
+        def parse_systolic(val):
+            try:
+                if pd.isna(val):
+                    return None
+                s = str(val)
+                if '/' in s:
+                    return float(s.split('/')[0])
+                return float(s)
+            except Exception:
+                return None
+        if uid and uid != 'all':
+            df_u = df_json[df_json['uid'].astype(str) == str(uid)].copy()
+            if df_u.empty:
+                return JsonResponse({'mode':'individual','x_dates':[],'series':{'gula_darah_puasa':[],'gula_darah_sewaktu':[],'tekanan_darah_sistole':[],'lingkar_perut':[],'cholesterol':[],'asam_urat':[]},'summary':{'total_employees':0,'well_count':0,'unwell_count':0}})
+            if date_col:
+                df_u = df_u.sort_values(by=date_col)
+                x_dates = df_u[date_col].dt.strftime('%Y-%m-%d').tolist()
+            else:
+                x_dates = []
+            series = {
+                'gula_darah_puasa': df_u.get('gula_darah_puasa', pd.Series(dtype='float64')).tolist(),
+                'gula_darah_sewaktu': df_u.get('gula_darah_sewaktu', pd.Series(dtype='float64')).tolist(),
+                'tekanan_darah_sistole': df_u.get('tekanan_darah', pd.Series(dtype='object')).apply(parse_systolic).tolist() if 'tekanan_darah' in df_u.columns else [],
+                'lingkar_perut': df_u.get('lingkar_perut', pd.Series(dtype='float64')).tolist(),
+                'cholesterol': df_u.get('cholesterol', pd.Series(dtype='float64')).tolist(),
+                'asam_urat': df_u.get('asam_urat', pd.Series(dtype='float64')).tolist(),
+            }
+            latest_row = df_u.iloc[-1]
+            total_employees = 1
+            well_count = 1 if str(latest_row.get('status')) == 'Well' else 0
+            unwell_count = 1 if str(latest_row.get('status')) == 'Unwell' else 0
+            return JsonResponse({'mode':'individual','x_dates':x_dates,'series':series,'summary':{'total_employees':total_employees,'well_count':well_count,'unwell_count':unwell_count}})
+        else:
+            df_filt = df_json.copy()
+            if df_filt.empty or not date_col:
+                return JsonResponse({'mode':'multiline','x_dates':[],'employees':[],'series_by_employee':{}})
+            df_filt = df_filt.dropna(subset=[date_col]).sort_values(by=[date_col, 'uid'])
+            x_dates = sorted(df_filt[date_col].dt.strftime('%Y-%m-%d').unique().tolist())
+            try:
+                if 'nama' not in df_filt.columns:
+                    df_filt['nama'] = df_filt['uid'].astype(str).apply(lambda u: f'UID {u}')
+            except Exception:
+                pass
+            series_by_employee = {}
+            employees_list = []
+            uids = [str(u) for u in df_filt['uid'].dropna().astype(str).unique().tolist()]
+            for u in uids:
+                df_u = df_filt[df_filt['uid'].astype(str) == u].copy().sort_values(by=[date_col])
+                date_map = {}
+                for _, row in df_u.iterrows():
+                    try:
+                        key = pd.to_datetime(row[date_col]).strftime('%Y-%m-%d')
+                    except Exception:
+                        key = None
+                    if key:
+                        date_map[key] = row
+                def to_float_safe(val):
+                    try:
+                        return float(val)
+                    except Exception:
+                        return None
+                s_gp = []; s_gs = []; s_td = []; s_lp = []; s_ch = []; s_au = []
+                for d in x_dates:
+                    row = date_map.get(d)
+                    if row is None:
+                        s_gp.append(None); s_gs.append(None); s_td.append(None); s_lp.append(None); s_ch.append(None); s_au.append(None)
+                    else:
+                        s_gp.append(to_float_safe(row.get('gula_darah_puasa')))
+                        s_gs.append(to_float_safe(row.get('gula_darah_sewaktu')))
+                        s_td.append(parse_systolic(row.get('tekanan_darah')))
+                        s_lp.append(to_float_safe(row.get('lingkar_perut')))
+                        s_ch.append(to_float_safe(row.get('cholesterol')))
+                        s_au.append(to_float_safe(row.get('asam_urat')))
+                series_by_employee[u] = {
+                    'nama': str(df_u.iloc[-1]['nama']) if not df_u.empty else f'UID {u}',
+                    'gula_darah_puasa': s_gp,
+                    'gula_darah_sewaktu': s_gs,
+                    'tekanan_darah_sistole': s_td,
+                    'lingkar_perut': s_lp,
+                    'cholesterol': s_ch,
+                    'asam_urat': s_au,
+                }
+                employees_list.append({'uid': u, 'nama': series_by_employee[u]['nama']})
+            return JsonResponse({'mode':'multiline','x_dates':x_dates,'employees':employees_list,'series_by_employee':series_by_employee})
 
     # Pull session messages for toast notifications
     success_message = request.session.pop("success_message", None)
@@ -136,7 +264,36 @@ def nurse_index(request):
     end_index = start_index + items_per_page
 
     df_page = df.iloc[start_index:end_index] if not df.empty else df
+    # Sanitize date/time columns to avoid NaTType utcoffset issues in templates
+    try:
+        df_page = sanitize_df_for_display(df_page)
+    except Exception:
+        pass
     employees = df_page.to_dict("records")
+
+    # Defaults for Grafik filters (last 6 months)
+    now = pd.Timestamp.now()
+    default_end_month_dt = pd.Timestamp(year=now.year, month=now.month, day=1)
+    default_start_month_dt = default_end_month_dt - pd.offsets.DateOffset(months=5)
+    default_start_month = default_start_month_dt.strftime('%Y-%m')
+    default_end_month = default_end_month_dt.strftime('%Y-%m')
+
+    # Available employees for UID dropdown in Grafik
+    available_employees = []
+    try:
+        emp_df = get_employees()
+    except Exception:
+        emp_df = pd.DataFrame()
+    if emp_df is not None and not emp_df.empty:
+        cols = [c for c in emp_df.columns]
+        uid_col = 'uid' if 'uid' in cols else ('UID' if 'UID' in cols else None)
+        name_col = 'nama' if 'nama' in cols else ('Nama' if 'Nama' in cols else None)
+        if uid_col:
+            emp_df = emp_df.dropna(subset=[uid_col])
+            for _, row in emp_df.iterrows():
+                u = str(row[uid_col])
+                n = str(row[name_col]) if name_col else f'UID {u}'
+                available_employees.append({'uid': u, 'nama': n})
 
     # Additional dashboard metrics similar to manager
     users_df = get_users()
@@ -253,6 +410,10 @@ def nurse_index(request):
         "dept_names": dept_names,
         "dept_counts": dept_counts,
         "grafik_chart_html": grafik_chart_html,
+        # Added for Nurse Grafik replication
+        "available_employees": available_employees,
+        "default_start_month": default_start_month,
+        "default_end_month": default_end_month,
         "active_menu_label": "Dashboard",
         "success_message": success_message,
         "error_message": error_message,
@@ -414,8 +575,8 @@ def nurse_karyawan_detail(request, uid):
     if requested_uid and str(requested_uid) != str(uid):
         submenu = request.GET.get("submenu", "edit")
         subtab = request.GET.get("subtab")
-        # Allow known submenu keys: edit, history, data_karyawan, edit_data
-        if submenu not in ["edit", "history", "data_karyawan", "edit_data"]:
+        # Allow known submenu keys: edit, history, data_karyawan, edit_data, grafik
+        if submenu not in ["edit", "history", "data_karyawan", "edit_data", "grafik"]:
             submenu = "edit"
         # Normalize: route 'edit' and 'edit_data' under data_karyawan with subtab
         if submenu in ["edit", "edit_data"]:
@@ -535,6 +696,7 @@ def nurse_karyawan_detail(request, uid):
                     'asam_urat': float(asam_n) if pd.notna(asam_n) else None,
                     'status': status,
                     'flags': flags,
+                    'checkup_id': int(row.get('checkup_id')) if row.get('checkup_id') is not None else None,
                 })
     except Exception:
         history_checkups = []
@@ -580,18 +742,25 @@ def nurse_karyawan_detail(request, uid):
             except Exception:
                 pass
 
+            # Build per-row dashboard entries
+            for _, row in df_hist2.iterrows():
+                # Parse numerics safely
+                umur_val = row.get('umur', None)
+                tinggi_n = pd.to_numeric(row.get('tinggi', None), errors='coerce')
+                berat_n = pd.to_numeric(row.get('berat', None), errors='coerce')
+                bmi_n = pd.to_numeric(row.get('bmi', None), errors='coerce')
+                lp_n = pd.to_numeric(row.get('lingkar_perut', None), errors='coerce')
+                gdp_n = pd.to_numeric(row.get('gula_darah_puasa', None), errors='coerce')
+                gds_n = pd.to_numeric(row.get('gula_darah_sewaktu', None), errors='coerce')
+                chol_n = pd.to_numeric(row.get('cholesterol', None), errors='coerce')
+                asam_n = pd.to_numeric(row.get('asam_urat', None), errors='coerce')
+
                 # Date formatting
                 tc_dt = pd.to_datetime(row.get('tanggal_checkup'), errors='coerce')
                 tanggal_str = tc_dt.strftime('%d/%m/%y') if pd.notna(tc_dt) else None
 
                 # Status based on thresholds
-                status_val = _compute_status({
-                    'gula_darah_puasa': gdp_n if pd.notna(gdp_n) else 0,
-                    'gula_darah_sewaktu': gds_n if pd.notna(gds_n) else 0,
-                    'cholesterol': chol_n if pd.notna(chol_n) else 0,
-                    'asam_urat': asam_n if pd.notna(asam_n) else 0,
-                    'bmi': bmi_n if pd.notna(bmi_n) else 0,
-                })
+                status_val = compute_status(row)
 
                 history_dashboard.append({
                     'uid': str(row.get('uid', uid)),
@@ -614,9 +783,80 @@ def nurse_karyawan_detail(request, uid):
                     'tanggal_MCU': emp_tanggal_mcu,
                     'expired_MCU': emp_expired_mcu,
                     'status': status_val,
+                    'checkup_id': int(row.get('checkup_id')) if row.get('checkup_id') is not None else None,
                 })
     except Exception:
         history_dashboard = []
+
+    # Grafik (match manager employee_profile)
+    grafik_chart_html = None
+    grafik_start_month = request.GET.get('start_month')
+    grafik_end_month = request.GET.get('end_month')
+    try:
+        # Default to last 6 months
+        today = datetime.today()
+        def _month_str(dt):
+            return f"{dt.year}-{dt.month:02d}"
+        if not grafik_end_month:
+            grafik_end_month = _month_str(today)
+        if not grafik_start_month:
+            grafik_start_month = _month_str(today - pd.DateOffset(months=5))
+
+        df_ts = checkups.copy()
+        if df_ts is not None and not df_ts.empty:
+            df_ts['tanggal_checkup'] = pd.to_datetime(df_ts['tanggal_checkup'], errors='coerce')
+            # Range boundaries
+            start_dt = pd.to_datetime(grafik_start_month + '-01', errors='coerce') if grafik_start_month else None
+            end_dt = pd.to_datetime(grafik_end_month + '-01', errors='coerce') if grafik_end_month else None
+            if pd.notnull(end_dt):
+                end_dt = (end_dt + pd.offsets.MonthBegin(1)) - pd.Timedelta(days=1)
+            if pd.notnull(start_dt) and pd.notnull(end_dt):
+                df_ts = df_ts[(df_ts['tanggal_checkup'] >= start_dt) & (df_ts['tanggal_checkup'] <= end_dt)]
+
+            df_ts = df_ts.sort_values('tanggal_checkup')
+            x_vals = df_ts['tanggal_checkup']
+            gdp = pd.to_numeric(df_ts.get('gula_darah_puasa'), errors='coerce')
+            gds = pd.to_numeric(df_ts.get('gula_darah_sewaktu'), errors='coerce')
+            lp = pd.to_numeric(df_ts.get('lingkar_perut'), errors='coerce')
+            chol = pd.to_numeric(df_ts.get('cholesterol'), errors='coerce')
+            asam = pd.to_numeric(df_ts.get('asam_urat'), errors='coerce')
+            def _parse_systolic(val):
+                try:
+                    s = str(val)
+                    if '/' in s:
+                        return pd.to_numeric(s.split('/')[0], errors='coerce')
+                    return pd.to_numeric(val, errors='coerce')
+                except Exception:
+                    return pd.NA
+            td_systolic = df_ts['tekanan_darah'].apply(_parse_systolic) if 'tekanan_darah' in df_ts.columns else pd.Series([], dtype='float64')
+
+            fig = go.Figure()
+            if not x_vals.empty:
+                if gdp is not None and not gdp.empty:
+                    fig.add_trace(go.Scatter(x=x_vals, y=gdp, mode='lines+markers', name='Gula Darah Puasa'))
+                if gds is not None and not gds.empty:
+                    fig.add_trace(go.Scatter(x=x_vals, y=gds, mode='lines+markers', name='Gula Darah Sewaktu'))
+                if td_systolic is not None and not td_systolic.empty:
+                    fig.add_trace(go.Scatter(x=x_vals, y=td_systolic, mode='lines+markers', name='Tekanan Darah (Sistole)'))
+                if lp is not None and not lp.empty:
+                    fig.add_trace(go.Scatter(x=x_vals, y=lp, mode='lines+markers', name='Lingkar Perut'))
+                if chol is not None and not chol.empty:
+                    fig.add_trace(go.Scatter(x=x_vals, y=chol, mode='lines+markers', name='Cholesterol'))
+                if asam is not None and not asam.empty:
+                    fig.add_trace(go.Scatter(x=x_vals, y=asam, mode='lines+markers', name='Asam Urat'))
+
+                fig.update_layout(
+                # ... existing code ...
+                    title='Grafik',
+                    xaxis_title='Tanggal Checkup',
+                    yaxis_title='Nilai',
+                    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+                    margin=dict(l=40, r=20, t=60, b=40),
+                    template='plotly_white'
+                )
+                grafik_chart_html = pio.to_html(fig, full_html=False, include_plotlyjs='cdn')
+    except Exception:
+        grafik_chart_html = None
 
     # Compute MCU expiry estimate (days until/since expiration)
     mcu_expiry_estimate = None
@@ -646,6 +886,9 @@ def nurse_karyawan_detail(request, uid):
         "active_menu_label": "Edit Data Checkup",
         "view_only": True,
         "mcu_expiry_estimate": mcu_expiry_estimate,
+        "grafik_chart_html": grafik_chart_html,
+        "grafik_start_month": grafik_start_month,
+        "grafik_end_month": grafik_end_month,
     })
 
 
@@ -722,9 +965,10 @@ def nurse_download_checkup_template(request):
         request.session["error_message"] = f"Failed to generate checkup template: {e}"
         return redirect(reverse("nurse:upload_export"))
 
+# New: PDF export of dashboard-like checkup data for nurse
 @require_http_methods(["GET"]) 
 def nurse_export_checkup_data(request):
-    """Export all medical checkup data (dashboard-like) to Excel for nurse."""
+    # Export all checkup data visible in dashboard (XLS)
     if not request.session.get("authenticated") or request.session.get("user_role") != "Tenaga Kesehatan":
         return redirect("accounts:login")
     try:
@@ -732,7 +976,6 @@ def nurse_export_checkup_data(request):
         if df is None or df.empty:
             request.session["warning_message"] = "belum ada check up data, silahkan unggah terlebih dahulu"
             return redirect(reverse("nurse:upload_export") + "?submenu=export_data")
-
         excel_bytes = build_checkup_excel(df)
         response = HttpResponse(
             excel_bytes,
@@ -743,6 +986,102 @@ def nurse_export_checkup_data(request):
     except Exception as e:
         request.session["error_message"] = f"Gagal mengekspor data checkup: {e}"
         return redirect(reverse("nurse:upload_export") + "?submenu=export_data")
+
+@require_http_methods(["GET"]) 
+def nurse_export_checkup_data_pdf(request):
+    if not request.session.get("authenticated") or request.session.get("user_role") != "Tenaga Kesehatan":
+        return redirect("accounts:login")
+    try:
+        df = get_dashboard_checkup_data()
+        if df is None or df.empty:
+            request.session["warning_message"] = "belum ada check up data, silahkan unggah terlebih dahulu"
+            return redirect(reverse("nurse:upload_export") + "?submenu=export_data")
+        pdf_bytes = build_checkup_pdf(df)
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = 'attachment; filename="medical_checkup_data.pdf"'
+        return response
+    except Exception as e:
+        request.session["error_message"] = f"Gagal mengekspor data checkup ke PDF: {e}"
+        return redirect(reverse("nurse:upload_export") + "?submenu=export_data")
+
+# New: Delete a checkup row (hapus)
+@require_http_methods(["POST", "GET"]) 
+def nurse_delete_checkup(request, checkup_id):
+    if not request.session.get("authenticated") or request.session.get("user_role") != "Tenaga Kesehatan":
+        return redirect("accounts:login")
+    from core.queries import delete_checkup
+    try:
+        delete_checkup(checkup_id)
+        request.session["success_message"] = "Checkup berhasil dihapus."
+    except Exception as e:
+        request.session["error_message"] = f"Gagal menghapus checkup: {e}"
+    # Redirect back to employee detail if uid is provided; else to dashboard
+    uid = request.GET.get("uid")
+    submenu = request.GET.get("submenu", "history")
+    if uid:
+        return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": uid}) + f"?submenu={submenu}")
+    return redirect(reverse("nurse:dashboard"))
+
+# New: Edit a checkup row
+@require_http_methods(["GET", "POST"]) 
+def nurse_edit_checkup(request, checkup_id):
+    if not request.session.get("authenticated") or request.session.get("user_role") != "Tenaga Kesehatan":
+        return redirect("accounts:login")
+    from core.core_models import Checkup
+    # Fetch existing record
+    obj = Checkup.objects.filter(checkup_id=checkup_id).first()
+    if obj is None:
+        request.session["error_message"] = "Checkup tidak ditemukan"
+        return redirect(reverse("nurse:dashboard"))
+
+    if request.method == "POST":
+        try:
+            # Read and normalize inputs
+            tanggal_checkup = request.POST.get("tanggal_checkup")
+            tinggi = request.POST.get("tinggi")
+            berat = request.POST.get("berat")
+            lingkar_perut = request.POST.get("lingkar_perut")
+            bmi = request.POST.get("bmi")
+            umur = request.POST.get("umur")
+            gula_darah_puasa = request.POST.get("gula_darah_puasa")
+            gula_darah_sewaktu = request.POST.get("gula_darah_sewaktu")
+            cholesterol = request.POST.get("cholesterol")
+            asam_urat = request.POST.get("asam_urat")
+            tekanan_darah = request.POST.get("tekanan_darah")
+            derajat_kesehatan = request.POST.get("derajat_kesehatan")
+
+            # Safe conversions
+            import pandas as pd
+            tanggal_checkup_date = pd.to_datetime(tanggal_checkup, errors="coerce")
+            # Apply updates
+            update_data = {
+                "tinggi": float(tinggi) if tinggi else None,
+                "berat": float(berat) if berat else None,
+                "lingkar_perut": float(lingkar_perut) if lingkar_perut else None,
+                "bmi": float(bmi) if bmi else None,
+                "umur": int(umur) if umur else None,
+                "gula_darah_puasa": float(gula_darah_puasa) if gula_darah_puasa else None,
+                "gula_darah_sewaktu": float(gula_darah_sewaktu) if gula_darah_sewaktu else None,
+                "cholesterol": float(cholesterol) if cholesterol else None,
+                "asam_urat": float(asam_urat) if asam_urat else None,
+                "tekanan_darah": tekanan_darah.strip() if tekanan_darah else None,
+                "derajat_kesehatan": derajat_kesehatan.strip() if derajat_kesehatan else None,
+            }
+            if pd.notna(tanggal_checkup_date):
+                update_data["tanggal_checkup"] = tanggal_checkup_date.date()
+            Checkup.objects.filter(checkup_id=checkup_id).update(**update_data)
+            request.session["success_message"] = "Checkup berhasil diperbarui."
+            # Redirect back to karyawan detail
+            uid = str(obj.uid_id)
+            return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": uid}) + "?submenu=history")
+        except Exception as e:
+            request.session["error_message"] = f"Gagal memperbarui checkup: {e}"
+            uid = str(obj.uid_id)
+            return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": uid}) + "?submenu=history")
+
+    # GET: render edit form
+    return render(request, "nurse/edit_checkup.html", {"checkup": obj})
+
 
 @require_http_methods(["GET"])
 def nurse_export_karyawan_data(request):
@@ -834,3 +1173,105 @@ def upload_avatar(request):
         request.session["error_message"] = f"Gagal menyimpan avatar: {e}"
 
     return redirect(reverse("nurse:dashboard"))
+
+@require_http_methods(["GET"]) 
+def nurse_export_checkup_history_by_uid(request, uid):
+    if not request.session.get("authenticated") or request.session.get("user_role") != "Tenaga Kesehatan":
+        return redirect("accounts:login")
+    try:
+        from core.core_models import Karyawan
+        if not Karyawan.objects.filter(uid=uid).exists():
+            request.session['error_message'] = f"UID {uid} tidak ditemukan."
+            return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": uid}) + "?submenu=history")
+        df = get_medical_checkups_by_uid(uid)
+        if df is None or df.empty:
+            request.session['warning_message'] = "Tidak ada data checkup untuk UID ini."
+            return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": uid}) + "?submenu=history")
+        # Normalize
+        if "uid_id" in df.columns and "uid" not in df.columns:
+            df = df.rename(columns={"uid_id": "uid"})
+        if "tanggal_checkup" in df.columns:
+            df["tanggal_checkup"] = pd.to_datetime(df["tanggal_checkup"], errors="coerce")
+        df = df.sort_values("tanggal_checkup", ascending=False)
+        # Build Excel
+        excel_bytes = build_checkup_excel(df)
+        filename = f"checkup_history_{uid}.xlsx"
+        response = HttpResponse(excel_bytes, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        response["Content-Disposition"] = f"attachment; filename={filename}"
+        return response
+    except Exception as e:
+        request.session['error_message'] = f"Gagal mengekspor riwayat checkup: {e}"
+        return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": uid}) + "?submenu=history")
+
+@require_http_methods(["GET"]) 
+def nurse_export_checkup_history_by_uid_pdf(request, uid):
+    if not request.session.get("authenticated") or request.session.get("user_role") != "Tenaga Kesehatan":
+        return redirect("accounts:login")
+    try:
+        from core.core_models import Karyawan
+        if not Karyawan.objects.filter(uid=uid).exists():
+            request.session['error_message'] = f"UID {uid} tidak ditemukan."
+            return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": uid}) + "?submenu=history")
+        df = get_medical_checkups_by_uid(uid)
+        if df is None or df.empty:
+            request.session['warning_message'] = "Tidak ada data checkup untuk UID ini."
+            return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": uid}) + "?submenu=history")
+        if "uid_id" in df.columns and "uid" not in df.columns:
+            df = df.rename(columns={"uid_id": "uid"})
+        if "tanggal_checkup" in df.columns:
+            df["tanggal_checkup"] = pd.to_datetime(df["tanggal_checkup"], errors="coerce")
+        df = df.sort_values("tanggal_checkup", ascending=False)
+        pdf_bytes = build_checkup_pdf(df)
+        filename = f"checkup_history_{uid}.pdf"
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = f"attachment; filename={filename}"
+        return response
+    except Exception as e:
+        request.session['error_message'] = f"Gagal mengekspor riwayat checkup ke PDF: {e}"
+        return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": uid}) + "?submenu=history")
+
+@require_http_methods(["GET"]) 
+def nurse_export_checkup_row(request, uid, checkup_id):
+    if not request.session.get("authenticated") or request.session.get("user_role") != "Tenaga Kesehatan":
+        return redirect("accounts:login")
+    try:
+        from core.core_models import Checkup
+        qs = Checkup.objects.filter(checkup_id=checkup_id, uid_id=uid)
+        if not qs.exists():
+            request.session['error_message'] = "Checkup tidak ditemukan untuk UID terkait."
+            return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": uid}) + "?submenu=history")
+        import pandas as _pd
+        df = _pd.DataFrame(list(qs.values()))
+        if "uid_id" in df.columns and "uid" not in df.columns:
+            df = df.rename(columns={"uid_id": "uid"})
+        excel_bytes = build_checkup_excel(df)
+        filename = f"checkup_{checkup_id}.xlsx"
+        response = HttpResponse(excel_bytes, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        response["Content-Disposition"] = f"attachment; filename={filename}"
+        return response
+    except Exception as e:
+        request.session['error_message'] = f"Gagal mengekspor data checkup: {e}"
+        return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": uid}) + "?submenu=history")
+
+@require_http_methods(["GET"]) 
+def nurse_export_checkup_row_pdf(request, uid, checkup_id):
+    if not request.session.get("authenticated") or request.session.get("user_role") != "Tenaga Kesehatan":
+        return redirect("accounts:login")
+    try:
+        from core.core_models import Checkup
+        qs = Checkup.objects.filter(checkup_id=checkup_id, uid_id=uid)
+        if not qs.exists():
+            request.session['error_message'] = "Checkup tidak ditemukan untuk UID terkait."
+            return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": uid}) + "?submenu=history")
+        import pandas as _pd
+        df = _pd.DataFrame(list(qs.values()))
+        if "uid_id" in df.columns and "uid" not in df.columns:
+            df = df.rename(columns={"uid_id": "uid"})
+        pdf_bytes = build_checkup_pdf(df)
+        filename = f"checkup_{checkup_id}.pdf"
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = f"attachment; filename={filename}"
+        return response
+    except Exception as e:
+        request.session['error_message'] = f"Gagal mengekspor data checkup ke PDF: {e}"
+        return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": uid}) + "?submenu=history")
