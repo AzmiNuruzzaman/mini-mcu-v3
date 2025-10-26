@@ -910,70 +910,72 @@ def nurse_karyawan_detail(request, uid):
     grafik_chart_html = None
     grafik_start_month = request.GET.get('start_month')
     grafik_end_month = request.GET.get('end_month')
-    try:
-        # Default to last 6 months
-        today = datetime.today()
-        def _month_str(dt):
-            return f"{dt.year}-{dt.month:02d}"
-        if not grafik_end_month:
-            grafik_end_month = _month_str(today)
-        if not grafik_start_month:
-            grafik_start_month = _month_str(today - pd.DateOffset(months=5))
+    if active_submenu == 'grafik':
+        try:
+            # Default to last 6 months
+            today = datetime.today()
+            def _month_str(dt):
+                return f"{dt.year}-{dt.month:02d}"
+            if not grafik_end_month:
+                grafik_end_month = _month_str(today)
+            if not grafik_start_month:
+                grafik_start_month = _month_str(today - pd.DateOffset(months=5))
 
-        df_ts = checkups.copy()
-        if df_ts is not None and not df_ts.empty:
-            df_ts['tanggal_checkup'] = pd.to_datetime(df_ts['tanggal_checkup'], errors='coerce')
-            # Range boundaries
-            start_dt = pd.to_datetime(grafik_start_month + '-01', errors='coerce') if grafik_start_month else None
-            end_dt = pd.to_datetime(grafik_end_month + '-01', errors='coerce') if grafik_end_month else None
-            if pd.notnull(end_dt):
-                end_dt = (end_dt + pd.offsets.MonthBegin(1)) - pd.Timedelta(days=1)
-            if pd.notnull(start_dt) and pd.notnull(end_dt):
-                df_ts = df_ts[(df_ts['tanggal_checkup'] >= start_dt) & (df_ts['tanggal_checkup'] <= end_dt)]
+            df_ts = checkups.copy()
+            if df_ts is not None and not df_ts.empty:
+                df_ts['tanggal_checkup'] = pd.to_datetime(df_ts['tanggal_checkup'], errors='coerce')
+                # Range boundaries
+                start_dt = pd.to_datetime(grafik_start_month + '-01', errors='coerce') if grafik_start_month else None
+                end_dt = pd.to_datetime(grafik_end_month + '-01', errors='coerce') if grafik_end_month else None
+                if pd.notnull(end_dt):
+                    end_dt = (end_dt + pd.offsets.MonthBegin(1)) - pd.Timedelta(days=1)
+                if pd.notnull(start_dt) and pd.notnull(end_dt):
+                    df_ts = df_ts[(df_ts['tanggal_checkup'] >= start_dt) & (df_ts['tanggal_checkup'] <= end_dt)]
 
-            df_ts = df_ts.sort_values('tanggal_checkup')
-            x_vals = df_ts['tanggal_checkup']
-            gdp = pd.to_numeric(df_ts.get('gula_darah_puasa'), errors='coerce')
-            gds = pd.to_numeric(df_ts.get('gula_darah_sewaktu'), errors='coerce')
-            lp = pd.to_numeric(df_ts.get('lingkar_perut'), errors='coerce')
-            chol = pd.to_numeric(df_ts.get('cholesterol'), errors='coerce')
-            asam = pd.to_numeric(df_ts.get('asam_urat'), errors='coerce')
-            def _parse_systolic(val):
-                try:
-                    s = str(val)
-                    if '/' in s:
-                        return pd.to_numeric(s.split('/')[0], errors='coerce')
-                    return pd.to_numeric(val, errors='coerce')
-                except Exception:
-                    return pd.NA
-            td_systolic = df_ts['tekanan_darah'].apply(_parse_systolic) if 'tekanan_darah' in df_ts.columns else pd.Series([], dtype='float64')
+                df_ts = df_ts.sort_values('tanggal_checkup')
+                x_vals = df_ts['tanggal_checkup']
+                gdp = pd.to_numeric(df_ts.get('gula_darah_puasa'), errors='coerce')
+                gds = pd.to_numeric(df_ts.get('gula_darah_sewaktu'), errors='coerce')
+                lp = pd.to_numeric(df_ts.get('lingkar_perut'), errors='coerce')
+                chol = pd.to_numeric(df_ts.get('cholesterol'), errors='coerce')
+                asam = pd.to_numeric(df_ts.get('asam_urat'), errors='coerce')
+                def _parse_systolic(val):
+                    try:
+                        s = str(val)
+                        if '/' in s:
+                            return pd.to_numeric(s.split('/')[0], errors='coerce')
+                        return pd.to_numeric(val, errors='coerce')
+                    except Exception:
+                        return pd.NA
+                td_systolic = df_ts['tekanan_darah'].apply(_parse_systolic) if 'tekanan_darah' in df_ts.columns else pd.Series([], dtype='float64')
 
-            fig = go.Figure()
-            if not x_vals.empty:
-                if gdp is not None and not gdp.empty:
-                    fig.add_trace(go.Scatter(x=x_vals, y=gdp, mode='lines+markers', name='Gula Darah Puasa'))
-                if gds is not None and not gds.empty:
-                    fig.add_trace(go.Scatter(x=x_vals, y=gds, mode='lines+markers', name='Gula Darah Sewaktu'))
-                if td_systolic is not None and not td_systolic.empty:
-                    fig.add_trace(go.Scatter(x=x_vals, y=td_systolic, mode='lines+markers', name='Tekanan Darah (Sistole)'))
-                if lp is not None and not lp.empty:
-                    fig.add_trace(go.Scatter(x=x_vals, y=lp, mode='lines+markers', name='Lingkar Perut'))
-                if chol is not None and not chol.empty:
-                    fig.add_trace(go.Scatter(x=x_vals, y=chol, mode='lines+markers', name='Cholesterol'))
-                if asam is not None and not asam.empty:
-                    fig.add_trace(go.Scatter(x=x_vals, y=asam, mode='lines+markers', name='Asam Urat'))
+                fig = go.Figure()
+                if not x_vals.empty:
+                    if gdp is not None and not gdp.empty:
+                        fig.add_trace(go.Scatter(x=x_vals, y=gdp, mode='lines+markers', name='Gula Darah Puasa'))
+                    if gds is not None and not gds.empty:
+                        fig.add_trace(go.Scatter(x=x_vals, y=gds, mode='lines+markers', name='Gula Darah Sewaktu'))
+                    if td_systolic is not None and not td_systolic.empty:
+                        fig.add_trace(go.Scatter(x=x_vals, y=td_systolic, mode='lines+markers', name='Tekanan Darah (Sistole)'))
+                    if lp is not None and not lp.empty:
+                        fig.add_trace(go.Scatter(x=x_vals, y=lp, mode='lines+markers', name='Lingkar Perut'))
+                    if chol is not None and not chol.empty:
+                        fig.add_trace(go.Scatter(x=x_vals, y=chol, mode='lines+markers', name='Cholesterol'))
+                    if asam is not None and not asam.empty:
+                        fig.add_trace(go.Scatter(x=x_vals, y=asam, mode='lines+markers', name='Asam Urat'))
 
-                fig.update_layout(
-                # ... existing code ...
-                    title='Grafik',
-                    xaxis_title='Tanggal Checkup',
-                    yaxis_title='Nilai',
-                    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
-                    margin=dict(l=40, r=20, t=60, b=40),
-                    template='plotly_white'
-                )
-                grafik_chart_html = pio.to_html(fig, full_html=False, include_plotlyjs='cdn')
-    except Exception:
+                    fig.update_layout(
+                        title='Grafik',
+                        xaxis_title='Tanggal Checkup',
+                        yaxis_title='Nilai',
+                        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+                        margin=dict(l=40, r=20, t=60, b=40),
+                        template='plotly_white'
+                    )
+                    grafik_chart_html = pio.to_html(fig, full_html=False, include_plotlyjs='cdn')
+        except Exception:
+            grafik_chart_html = None
+    else:
         grafik_chart_html = None
 
     # Compute MCU expiry estimate (days until/since expiration)

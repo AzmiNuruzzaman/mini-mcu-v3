@@ -51,7 +51,8 @@
   {% endif %}
 
   <!-- Edit Data Karyawan Content (now shown under Data Karyawan > Karyawan Profile) -->
-  <div id="edit-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4 {% if active_submenu != 'data_karyawan' or active_subtab != 'profile' %}hidden{% endif %}">
+  {% if active_submenu == 'data_karyawan' and active_subtab == 'profile' %}
+  <div id="edit-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4">
       <h2 class="text-xl font-bold mb-3">Edit Karyawan</h2>
 
       <!-- 1. Selector box by nama on the top -->
@@ -310,20 +311,24 @@
           <div class="p-4 bg-gray-50 border rounded text-gray-500">Belum ada data medical checkup.</div>
         {% endif %}
       </section>
-  </div>
+   </div>
+   {% endif %}
 
   <!-- Edit Karyawan Data Content (empty; now under Data Karyawan > Edit Karyawan Data) -->
-  <div id="edit-data-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4 {% if active_submenu != 'data_karyawan' or active_subtab != 'edit_data' %}hidden{% endif %}">
+   {% if active_submenu == 'data_karyawan' and active_subtab == 'edit_data' %}
+   <div id="edit-data-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4">
       <h2 class="text-xl font-bold mb-3">Edit Data Checkup</h2>
       <div class="mb-2">
          <span class="text-sm text-green-600 font-semibold cursor-help" title="Pilih karyawan di tab Karyawan Profile">Pilih karyawan di tab Karyawan Profile</span>
       </div>
       <!-- Removed duplicate Karyawan name label as it's already shown in the container/header -->
       {% include 'nurse/partials/edit_karyawan_form.html' with karyawan=employee %}
-  </div>
+   </div>
+   {% endif %}
 
   <!-- History Medical Check Up Content -->
-  <div id="history-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4 {% if active_submenu != 'history' %}hidden{% endif %}">
+   {% if active_submenu == 'history' %}
+   <div id="history-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4">
       <h2 class="text-xl font-bold mb-3">History Medical Check Up</h2>
       <a href="{% url 'nurse:export_checkup_history_by_uid' employee.uid %}" class="inline-flex items-center bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700 mb-3">Download seluruh riwayat (XLS)</a>
       <a href="{% url 'nurse:export_checkup_history_by_uid_pdf' employee.uid %}" class="inline-flex items-center bg-yellow-600 text-white px-3 py-2 rounded hover:bg-yellow-700 mb-3 ml-2">Download seluruh riwayat (PDF)</a>
@@ -341,10 +346,12 @@
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lokasi</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal Lahir</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Umur</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BMI</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BMI Category</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal Checkup</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lingkar Perut</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">GDP</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">GDS</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gula Darah Puasa</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gula Darah Sewaktu</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cholesterol</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Asam Urat</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tekanan Darah</th>
@@ -364,30 +371,42 @@
               <td class="px-6 py-4 whitespace-nowrap">{{ row.jabatan|default:"-" }}</td>
               <td class="px-6 py-4 whitespace-nowrap">{{ row.lokasi|default:"-" }}</td>
               <td class="px-6 py-4 whitespace-nowrap">{{ row.tanggal_lahir|default:"-" }}</td>
-              <td class="px-6 py-4 whitespace-nowrap">{{ row.umur|default:"-" }}</td>
               <td class="px-6 py-4 whitespace-nowrap">
-                <input type="date" id="tanggal_checkup-{{ row.checkup_id }}" value="{{ row.tanggal_checkup|default:'' }}" disabled class="border px-2 py-1 rounded">
+                <input type="number" id="umur-{{ row.checkup_id }}" value="{{ row.umur|default:'' }}" class="w-24 border px-2 py-1 rounded" disabled />
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
-                <input type="text" id="lingkar_perut-{{ row.checkup_id }}" value="{{ row.lingkar_perut|default:'' }}" disabled class="border px-2 py-1 rounded">
+                <input type="number" step="0.01" id="bmi-{{ row.checkup_id }}" value="{{ row.bmi|default:'' }}" class="w-24 border px-2 py-1 rounded {% if row.flags and row.flags.bmi_high %}text-red-600 font-semibold{% endif %}" disabled />
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
-                <input type="text" id="gula_darah_puasa-{{ row.checkup_id }}" value="{{ row.gula_darah_puasa|default:'' }}" disabled class="border px-2 py-1 rounded {% if row.flags and row.flags.gdp_high %}text-red-600 font-semibold{% endif %}">
+                {% if row.bmi is not None %}
+                  {% if row.bmi < 18.5 %}Underweight{% elif row.bmi < 25 %}Normal{% elif row.bmi < 30 %}Overweight{% else %}Obese{% endif %}
+                {% else %}
+                  <span class="text-gray-400 italic">-</span>
+                {% endif %}
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
-                <input type="text" id="gula_darah_sewaktu-{{ row.checkup_id }}" value="{{ row.gula_darah_sewaktu|default:'' }}" disabled class="border px-2 py-1 rounded {% if row.flags and row.flags.gds_high %}text-red-600 font-semibold{% endif %}">
+                <input type="text" id="tanggal_checkup-{{ row.checkup_id }}" value="{{ row.tanggal_checkup|default:'' }}" placeholder="dd/mm/yy atau yyyy-mm-dd" class="w-32 border px-2 py-1 rounded" disabled />
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
-                <input type="text" id="cholesterol-{{ row.checkup_id }}" value="{{ row.cholesterol|default:'' }}" disabled class="border px-2 py-1 rounded {% if row.flags and row.flags.chol_high %}text-red-600 font-semibold{% endif %}">
+                <input type="number" step="0.01" id="lingkar_perut-{{ row.checkup_id }}" value="{{ row.lingkar_perut|default:'' }}" disabled class="w-24 border px-2 py-1 rounded">
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
-                <input type="text" id="asam_urat-{{ row.checkup_id }}" value="{{ row.asam_urat|default:'' }}" disabled class="border px-2 py-1 rounded {% if row.flags and row.flags.asam_high %}text-red-600 font-semibold{% endif %}">
+                <input type="number" step="0.01" id="gula_darah_puasa-{{ row.checkup_id }}" value="{{ row.gula_darah_puasa|default:'' }}" disabled class="w-24 border px-2 py-1 rounded {% if row.flags and row.flags.gdp_high %}text-red-600 font-semibold{% endif %}">
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
-                <input type="text" id="tekanan_darah-{{ row.checkup_id }}" value="{{ row.tekanan_darah|default:'' }}" disabled class="border px-2 py-1 rounded">
+                <input type="number" step="0.01" id="gula_darah_sewaktu-{{ row.checkup_id }}" value="{{ row.gula_darah_sewaktu|default:'' }}" disabled class="w-24 border px-2 py-1 rounded {% if row.flags and row.flags.gds_high %}text-red-600 font-semibold{% endif %}">
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
-                <input type="text" id="derajat_kesehatan-{{ row.checkup_id }}" value="{{ row.derajat_kesehatan|default:'' }}" disabled class="border px-2 py-1 rounded">
+                <input type="number" step="0.01" id="cholesterol-{{ row.checkup_id }}" value="{{ row.cholesterol|default:'' }}" disabled class="w-24 border px-2 py-1 rounded {% if row.flags and row.flags.chol_high %}text-red-600 font-semibold{% endif %}">
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <input type="number" step="0.01" id="asam_urat-{{ row.checkup_id }}" value="{{ row.asam_urat|default:'' }}" disabled class="w-24 border px-2 py-1 rounded {% if row.flags and row.flags.asam_high %}text-red-600 font-semibold{% endif %}">
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <input type="text" id="tekanan_darah-{{ row.checkup_id }}" value="{{ row.tekanan_darah|default:'' }}" disabled class="w-28 border px-2 py-1 rounded">
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <input type="text" id="derajat_kesehatan-{{ row.checkup_id }}" value="{{ row.derajat_kesehatan|default:'' }}" disabled class="w-20 border px-2 py-1 rounded">
               </td>
               <td class="px-6 py-4 whitespace-nowrap">{{ row.tanggal_MCU|default:"-" }}</td>
               <td class="px-6 py-4 whitespace-nowrap">{{ row.expired_MCU|default:"-" }}</td>
@@ -425,10 +444,12 @@
           Belum ada data medical checkup.
         </div>
       {% endif %}
-  </div>
+   </div>
+   {% endif %}
 
+  {% if active_submenu == 'grafik' %}
   <!-- Grafik Content -->
-  <div id="grafik-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4 {% if active_submenu != 'grafik' %}hidden{% endif %}">
+  <div id="grafik-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4">
       <h2 class="text-xl font-bold mb-3">Grafik</h2>
       <form method="get" class="mb-4 flex items-center gap-2">
         <input type="hidden" name="submenu" value="grafik"/>
@@ -446,6 +467,7 @@
         <div class="p-4 bg-gray-50 border rounded text-gray-500">Belum ada data grafik untuk range ini.</div>
       {% endif %}
   </div>
+  {% endif %}
 </div>
 {% load static %}
 <script src="{% static 'users_ui/nurse/js/edit_karyawan.js' %}"></script>

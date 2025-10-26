@@ -350,7 +350,10 @@ def dashboard(request):
     default_start_month = (now2 - pd.offsets.DateOffset(months=5)).strftime('%Y-%m')
 
     # Grafik subtab and month range defaults for server-rendered Plotly
-    grafik_subtab = forced_subtab or request.GET.get('subtab', 'grafik_kesehatan')
+    if active_submenu == 'grafik':
+        grafik_subtab = forced_subtab or request.GET.get('subtab', 'grafik_kesehatan')
+    else:
+        grafik_subtab = None
     grafik_start_month = request.GET.get('start_month', default_start_month)
     grafik_end_month = request.GET.get('end_month', default_end_month)
 
