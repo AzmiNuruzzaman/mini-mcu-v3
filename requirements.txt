@@ -1,32 +1,38 @@
-# Django core
+# === Django Core ===
 Django>=5.0,<6.0
 
-# Database
-psycopg2-binary
-dj-database-url
-python-dotenv
+# === Database ===
+psycopg2-binary>=2.9
+dj-database-url>=2.1
+python-dotenv>=1.0
 
-# Data & Excel
-pandas
-openpyxl
-XlsxWriter
+# === Data & Excel ===
+pandas>=2.2
+openpyxl>=3.1
+XlsxWriter>=3.2
 
-# Security / hashing
-bcrypt
+# === Security / Hashing ===
+bcrypt>=4.1
 
-# Utilities
-pillow
-qrcode[pil]
-requests
+# === Utilities ===
+pillow>=10.2
+qrcode[pil]>=7.4
+requests>=2.32
 
-# Visualization
-plotly
+# === Visualization ===
+plotly>=5.24
 
-# Static serving for production
-whitenoise
+# === Static Files (Production) ===
+whitenoise>=6.7
 
-# WSGI server for production
-gunicorn
+# === WSGI Server (Production) ===
+gunicorn>=23.0
 
-# PDF generation
-reportlab
+# === PDF Generation ===
+reportlab>=4.1
+
+# === Optional / Common in Mini-MCU ===
+# For data validation, Excel import/export handling
+numpy>=1.26
+# For better timezone handling (used implicitly by pandas + Django)
+pytz>=2024.1

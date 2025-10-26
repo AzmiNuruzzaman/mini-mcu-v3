@@ -1,0 +1,67 @@
+{% comment %}Manager Dashboard → Grafik → Grafik Kesehatan (partial)
+Mirrors Edit Master Data → Grafik layout and style, with an added Karyawan selector.
+{% endcomment %}
+<div id="grafik-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4 {% if grafik_subtab != 'grafik_kesehatan' %}hidden{% endif %}">
+  <h2 class="text-xl font-bold mb-3">Grafik Riwayat Medical Check Up</h2>
+  <form method="get" class="mb-4 flex items-center gap-2">
+    <input type="hidden" name="submenu" value="grafik"/>
+    <input type="hidden" name="subtab" value="grafik_kesehatan"/>
+    <label class="font-medium">Range Bulan:</label>
+    <input type="month" name="start_month" value="{{ grafik_start_month }}" class="border px-2 py-1 rounded">
+    <span class="mx-1">s/d</span>
+    <input type="month" name="end_month" value="{{ grafik_end_month }}" class="border px-2 py-1 rounded">
+    <label class="font-medium ml-2">Karyawan:</label>
+    <select name="uid" class="border px-2 py-1 rounded">
+      <option value="all" {% if request.GET.uid == 'all' or not request.GET.uid %}selected{% endif %}>Semua Karyawan</option>
+      {% for emp in available_employees %}
+      <option value="{{ emp.uid }}" {% if request.GET.uid == emp.uid %}selected{% endif %}>{{ emp.nama }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Terapkan</button>
+  </form>
+  {% if grafik_chart_html %}
+    <div class="w-full overflow-x-auto">
+      {{ grafik_chart_html|safe }}
+    </div>
+    <script>
+      document.addEventListener('DOMContentLoaded', function(){
+        var grafContainer = document.querySelector('#grafik-content .plotly-graph-div');
+        if (!grafContainer || typeof Plotly === 'undefined' || !Plotly.relayout) return;
+        var thresholds = {
+          'BMI': 30,
+          'Gula Darah Puasa': 120,
+          'Gula Darah Sewaktu': 200,
+          'Cholesterol': 240,
+          'Asam Urat': 7
+        };
+        grafContainer.on('plotly_legendclick', function(ev){
+          try {
+            var idx = ev.curveNumber;
+            var d = ev.data || (ev.fullData || []);
+            var name = (d && d[idx] && d[idx].name) ? d[idx].name : null;
+            if (!name) return true;
+            var thr = thresholds[name];
+            var shapes = [];
+            if (thr != null) {
+              shapes = [{ type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y', y0: thr, y1: thr, line: { color: 'rgba(255,0,0,0.35)', width: 2, dash: 'dash' } }];
+            }
+            Plotly.relayout(grafContainer, { shapes: shapes });
+          } catch(e) {}
+          return true;
+        });
+        grafContainer.on('plotly_click', function(ev){
+          try {
+            var pt = ev.points && ev.points[0];
+            var name = pt && pt.data && pt.data.name;
+            var thr = thresholds[name];
+            if (thr == null) return;
+            var shape = { type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y', y0: thr, y1: thr, line: { color: 'rgba(255,0,0,0.35)', width: 2, dash: 'dash' } };
+            Plotly.relayout(grafContainer, { shapes: [shape] });
+          } catch(e) {}
+        });
+      });
+    </script>
+  {% else %}
+    <div class="p-4 bg-gray-50 border rounded text-gray-500">Belum ada data grafik untuk range ini.</div>
+  {% endif %}
+</div>

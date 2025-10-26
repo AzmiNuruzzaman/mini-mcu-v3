@@ -4,7 +4,10 @@ from django.shortcuts import render, redirect
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
-import pandas as pd
+try:
+    import pandas as pd
+except Exception:
+    pd = None
 from datetime import datetime
 from django.conf import settings
 import base64
@@ -32,6 +35,8 @@ from core.queries import (
     write_checkup_upload_log,
     get_checkup_upload_history,
     load_checkups,
+    get_manual_input_logs,
+    write_manual_input_log,
 )
 
 from core.helpers import (
@@ -58,11 +63,20 @@ def dashboard(request):
     - Recent medical checkups
     - Quick stats
     """
-    if not request.session.get("authenticated") or request.session.get("user_role") != "Manager":
+    if not request.session.get("authenticated") or request.session.get("user_role") not in ["Manager", "Tenaga Kesehatan"]:
         return redirect("accounts:login")
 
     active_menu = "dashboard"  # Changed to match the mapping in get_active_menu_for_view
     active_submenu = request.GET.get('submenu', 'data')
+    # Path-based override to allow nurse routes to open grafik tabs directly
+    path_str = request.path or ''
+    forced_subtab = None
+    if 'grafik/kesehatan' in path_str or 'dashboard/grafik/kesehatan' in path_str:
+        active_submenu = 'grafik'
+        forced_subtab = 'grafik_kesehatan'
+    elif 'grafik/well_unwell' in path_str or 'dashboard/grafik/well_unwell' in path_str:
+        active_submenu = 'grafik'
+        forced_subtab = 'well_unwell'
     
     # Grafik JSON API: return processed data for chart overhaul
     if active_submenu == 'grafik' and request.GET.get('grafik_json') == '1':
@@ -335,6 +349,11 @@ def dashboard(request):
     default_end_month = now2.strftime('%Y-%m')
     default_start_month = (now2 - pd.offsets.DateOffset(months=5)).strftime('%Y-%m')
 
+    # Grafik subtab and month range defaults for server-rendered Plotly
+    grafik_subtab = forced_subtab or request.GET.get('subtab', 'grafik_kesehatan')
+    grafik_start_month = request.GET.get('start_month', default_start_month)
+    grafik_end_month = request.GET.get('end_month', default_end_month)
+
     context = {
         'active_menu': active_menu,
         'active_submenu': active_submenu,
@@ -360,7 +379,84 @@ def dashboard(request):
         'available_uids': available_uids,
         'default_start_month': default_start_month,
         'default_end_month': default_end_month,
+        # Grafik context
+        'grafik_subtab': grafik_subtab,
+        'grafik_start_month': grafik_start_month,
+        'grafik_end_month': grafik_end_month,
     }
+
+    # Build server-rendered Plotly grafik (mirroring Edit Master Data > Grafik) when submenu=grafik
+    if active_submenu == 'grafik' and grafik_subtab == 'grafik_kesehatan':
+        try:
+            # Load historical checkups if available; else fallback to latest dashboard data
+            try:
+                df_src = load_checkups()
+            except Exception:
+                df_src = pd.DataFrame()
+            if not hasattr(df_src, 'empty') or df_src.empty:
+                try:
+                    df_src = get_dashboard_checkup_data()
+                except Exception:
+                    df_src = pd.DataFrame()
+            # Determine date column
+            date_col = None
+            now = pd.Timestamp.now()
+            df_src = df_src.copy()
+            if not df_src.empty and 'tanggal_MCU' in df_src.columns:
+                df_src['tanggal_MCU_raw'] = df_src['tanggal_MCU']
+                df_src['tanggal_MCU'] = pd.to_datetime(df_src['tanggal_MCU'], errors='coerce', dayfirst=True)
+                if df_src['tanggal_MCU'].isna().all():
+                    df_src['tanggal_MCU'] = pd.to_datetime(df_src['tanggal_MCU_raw'], format='%d/%m/%y', errors='coerce')
+                date_col = 'tanggal_MCU'
+            elif not df_src.empty and 'tanggal_checkup' in df_src.columns:
+                df_src['tanggal_checkup'] = pd.to_datetime(df_src['tanggal_checkup'], errors='coerce', dayfirst=True)
+                date_col = 'tanggal_checkup'
+            else:
+                df_src['synthetic_month'] = now.strftime('%Y-%m')
+            # Filter by month range and uid
+            start_dt = pd.to_datetime(grafik_start_month + '-01', errors='coerce') if grafik_start_month else pd.Timestamp(year=now.year, month=now.month, day=1)
+            end_dt = pd.to_datetime(grafik_end_month + '-01', errors='coerce') if grafik_end_month else pd.Timestamp(year=now.year, month=now.month, day=1)
+            end_dt_end = (end_dt + pd.offsets.MonthBegin(1)) - pd.Timedelta(days=1)
+            df_plot = df_src.copy()
+            if date_col:
+                df_plot = df_plot.dropna(subset=[date_col])
+                df_plot = df_plot[(df_plot[date_col] >= start_dt) & (df_plot[date_col] <= end_dt_end)]
+            uid = request.GET.get('uid', '')
+            if uid and uid != 'all':
+                df_plot = df_plot[df_plot['uid'].astype(str) == str(uid)]
+            # Prepare x-axis
+            x_vals = []
+            if date_col:
+                x_vals = df_plot[date_col].dt.strftime('%Y-%m-%d').fillna('').tolist()
+            else:
+                x_vals = df_plot.get('synthetic_month', now.strftime('%Y-%m')).tolist()
+            # Helper to coerce floats
+            def to_float_safe(val):
+                try:
+                    return float(val)
+                except Exception:
+                    return None
+            # Build traces
+            fig = go.Figure()
+            # Map label -> dataframe column
+            param_map = [
+                ('Gula Darah Puasa', 'gula_darah_puasa'),
+                ('Gula Darah Sewaktu', 'gula_darah_sewaktu'),
+                ('Cholesterol', 'cholesterol'),
+                ('Asam Urat', 'asam_urat'),
+                ('BMI', 'bmi'),
+            ]
+            for label, colname in param_map:
+                if colname in df_plot.columns:
+                    y_vals = df_plot[colname].apply(to_float_safe).tolist()
+                    fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines+markers', name=label))
+            fig.update_layout(title='Grafik Kesehatan', xaxis_title='Tanggal', yaxis_title='Nilai', legend_title_text='Parameter')
+            grafik_chart_html = pio.to_html(fig, include_plotlyjs=False, full_html=False)
+            context['grafik_chart_html'] = grafik_chart_html
+        except Exception:
+            # If any error occurs, skip rendering chart
+            context['grafik_chart_html'] = None
+
     # Upload History context
     if active_submenu == 'upload_history':
         try:
@@ -964,7 +1060,7 @@ def manage_karyawan_uid(request):
     if not request.session.get("authenticated") or request.session.get("user_role") != "Manager":
         return redirect("accounts:login")
 
-    # Determine active subtab (karyawan or upload_history)
+    # Determine active subtab (karyawan, checkup, upload_history, logs)
     active_subtab = request.GET.get("subtab", "karyawan")
 
     # Load employees as DataFrame
@@ -1040,6 +1136,17 @@ def manage_karyawan_uid(request):
     except Exception:
         pass
 
+    # Logs subtab: fetch manual input logs for selected UID
+    selected_uid = (request.GET.get('uid') or '').strip()
+    manual_logs = []
+    if active_subtab == 'logs' and selected_uid:
+        try:
+            from core.queries import get_manual_input_logs
+            logs_df = get_manual_input_logs(selected_uid)
+            manual_logs = logs_df.to_dict('records') if hasattr(logs_df, 'empty') and not logs_df.empty else []
+        except Exception:
+            manual_logs = []
+
     context = {
         'employees': employees,
         'page_title': 'Hapus Data Karyawan',
@@ -1050,6 +1157,8 @@ def manage_karyawan_uid(request):
         'name_options': name_options,
         'active_subtab': active_subtab,
         'upload_history': upload_history,
+        'manual_logs': manual_logs,
+        'selected_uid': selected_uid,
         'MEDIA_URL': settings.MEDIA_URL,
     }
 
@@ -1212,7 +1321,8 @@ def employee_profile(request, uid):
                     return str(v).strip() if v is not None and str(v).strip() != "" else None
                 tanggal_checkup_raw = request.POST.get("tanggal_checkup")
                 try:
-                    tc_dt = pd.to_datetime(tanggal_checkup_raw, errors="coerce") if tanggal_checkup_raw else None
+                    # Parse with dayfirst=True to correctly handle 'dd/mm/yy' input
+                    tc_dt = pd.to_datetime(tanggal_checkup_raw, dayfirst=True, errors="coerce") if tanggal_checkup_raw else None
                     tanggal_checkup_val = tc_dt.date() if pd.notna(tc_dt) else None
                 except Exception:
                     tanggal_checkup_val = None
@@ -1239,6 +1349,13 @@ def employee_profile(request, uid):
                 if update_fields:
                     Checkup.objects.filter(checkup_id=target_id).update(**update_fields)
                     request.session['success_message'] = "Baris riwayat checkup berhasil diperbarui."
+                    # Log manual edit to checkup
+                    actor = request.session.get("username") or getattr(request.user, "username", None)
+                    role = request.session.get("user_role") or "Unknown"
+                    try:
+                        write_manual_input_log(uid=uid, actor=str(actor), role=str(role), event="manual_checkup_input", changed_fields=list(update_fields.keys()), new_values=update_fields, checkup_id=target_id)
+                    except Exception:
+                        pass
                 else:
                     request.session['error_message'] = "Tidak ada perubahan yang disimpan."
             except Exception as e:
@@ -1322,6 +1439,15 @@ def employee_profile(request, uid):
             updated_count = save_manual_karyawan_edits(df_updates)
             if updated_count > 0:
                 request.session['success_message'] = "Data master karyawan berhasil diperbarui."
+                # Log manual edit to master data
+                actor = request.session.get("username") or getattr(request.user, "username", None)
+                role = request.session.get("user_role") or "Unknown"
+                changed_fields = [k for k in row.keys() if k != "uid"]
+                new_values = {k: row[k] for k in changed_fields}
+                try:
+                    write_manual_input_log(uid=uid, actor=str(actor), role=str(role), event="edit_master", changed_fields=changed_fields, new_values=new_values)
+                except Exception:
+                    pass
             else:
                 request.session['error_message'] = "Tidak ada perubahan yang disimpan."
         except Exception as e:
@@ -1592,6 +1718,13 @@ def employee_profile(request, uid):
                     'expired_MCU': emp_expired_mcu,
                     'checkup_id': row.get('checkup_id'),
                     'status': status_val,
+                    'flags': {
+                        'bmi_high': (pd.notna(bmi_n) and float(bmi_n) >= 30.0),
+                        'gdp_high': (pd.notna(gdp_n) and float(gdp_n) > 120.0),
+                        'gds_high': (pd.notna(gds_n) and float(gds_n) > 200.0),
+                        'chol_high': (pd.notna(chol_n) and float(chol_n) > 240.0),
+                        'asam_high': (pd.notna(asam_n) and float(asam_n) > 7.0),
+                    },
                 })
     except Exception:
         history_dashboard = []
@@ -1628,6 +1761,7 @@ def employee_profile(request, uid):
             lp = pd.to_numeric(df_ts.get('lingkar_perut'), errors='coerce')
             chol = pd.to_numeric(df_ts.get('cholesterol'), errors='coerce')
             asam = pd.to_numeric(df_ts.get('asam_urat'), errors='coerce')
+            bmi_series = pd.to_numeric(df_ts.get('bmi'), errors='coerce')
             def _parse_systolic(val):
                 try:
                     s = str(val)
@@ -1652,6 +1786,8 @@ def employee_profile(request, uid):
                     fig.add_trace(go.Scatter(x=x_vals, y=chol, mode='lines+markers', name='Cholesterol'))
                 if asam is not None and not asam.empty:
                     fig.add_trace(go.Scatter(x=x_vals, y=asam, mode='lines+markers', name='Asam Urat'))
+                if bmi_series is not None and not bmi_series.empty:
+                    fig.add_trace(go.Scatter(x=x_vals, y=bmi_series, mode='lines+markers', name='BMI'))
 
                 fig.update_layout(
                     title='Grafik Riwayat Medical Checkup',
@@ -1825,8 +1961,23 @@ def save_medical_checkup(request, uid):
             "derajat_kesehatan": derajat_kesehatan.strip() if derajat_kesehatan else None,
         }
 
-        insert_medical_checkup(**record)
+        new_obj = insert_medical_checkup(**record)
         request.session["success_message"] = "Pemeriksaan medis berhasil disimpan."
+        # Log manual checkup input entry
+        actor = request.session.get("username") or getattr(request.user, "username", None)
+        role = request.session.get("user_role") or "Unknown"
+        try:
+            write_manual_input_log(
+                uid=uid,
+                actor=str(actor),
+                role=str(role),
+                event="manual_checkup_input",
+                changed_fields=list(record.keys()),
+                new_values=record,
+                checkup_id=getattr(new_obj, "checkup_id", None),
+            )
+        except Exception:
+            pass
     except Exception as e:
         request.session["error_message"] = f"Gagal menyimpan checkup: {e}"
 
@@ -2490,11 +2641,20 @@ def dashboard(request):
     - Recent medical checkups
     - Quick stats
     """
-    if not request.session.get("authenticated") or request.session.get("user_role") != "Manager":
+    if not request.session.get("authenticated") or request.session.get("user_role") not in ["Manager", "Tenaga Kesehatan"]:
         return redirect("accounts:login")
 
     active_menu = "dashboard"  # Changed to match the mapping in get_active_menu_for_view
     active_submenu = request.GET.get('submenu', 'data')
+    # Path-based override to allow nurse routes to open grafik tabs directly
+    path_str = request.path or ''
+    forced_subtab = None
+    if 'grafik/kesehatan' in path_str or 'dashboard/grafik/kesehatan' in path_str:
+        active_submenu = 'grafik'
+        forced_subtab = 'grafik_kesehatan'
+    elif 'grafik/well_unwell' in path_str or 'dashboard/grafik/well_unwell' in path_str:
+        active_submenu = 'grafik'
+        forced_subtab = 'well_unwell'
 
     # Grafik JSON API: return processed data for chart overhaul
     if active_submenu == 'grafik' and request.GET.get('grafik_json') == '1':
@@ -2554,7 +2714,7 @@ def dashboard(request):
         if uid and uid != 'all':
             df_u = df_json[df_json['uid'].astype(str) == str(uid)].copy()
             if df_u.empty:
-                return JsonResponse({'mode':'individual','x_dates':[],'series':{'gula_darah_puasa':[],'gula_darah_sewaktu':[],'tekanan_darah_sistole':[],'lingkar_perut':[],'cholesterol':[],'asam_urat':[]},'summary':{'total_employees':0,'well_count':0,'unwell_count':0}})
+                return JsonResponse({'mode':'individual','x_dates':[],'series':{'gula_darah_puasa':[],'gula_darah_sewaktu':[],'tekanan_darah_sistole':[],'lingkar_perut':[],'cholesterol':[],'asam_urat':[],'bmi':[]},'summary':{'total_employees':0,'well_count':0,'unwell_count':0}})
             # Sort by date
             if date_col:
                 df_u = df_u.sort_values(by=date_col)
@@ -2568,6 +2728,7 @@ def dashboard(request):
                 'lingkar_perut': df_u.get('lingkar_perut', pd.Series(dtype='float64')).tolist(),
                 'cholesterol': df_u.get('cholesterol', pd.Series(dtype='float64')).tolist(),
                 'asam_urat': df_u.get('asam_urat', pd.Series(dtype='float64')).tolist(),
+                'bmi': df_u.get('bmi', pd.Series(dtype='float64')).tolist(),
             }
             # Summary from latest row
             latest_row = df_u.iloc[-1]
@@ -2631,10 +2792,11 @@ def dashboard(request):
                 s_lp = []
                 s_ch = []
                 s_au = []
+                s_bmi = []
                 for d in x_dates:
                     row = date_map.get(d)
                     if row is None:
-                        s_gp.append(None); s_gs.append(None); s_td.append(None); s_lp.append(None); s_ch.append(None); s_au.append(None)
+                        s_gp.append(None); s_gs.append(None); s_td.append(None); s_lp.append(None); s_ch.append(None); s_au.append(None); s_bmi.append(None)
                     else:
                         s_gp.append(to_float_safe(row.get('gula_darah_puasa')))
                         s_gs.append(to_float_safe(row.get('gula_darah_sewaktu')))
@@ -2642,6 +2804,7 @@ def dashboard(request):
                         s_lp.append(to_float_safe(row.get('lingkar_perut')))
                         s_ch.append(to_float_safe(row.get('cholesterol')))
                         s_au.append(to_float_safe(row.get('asam_urat')))
+                        s_bmi.append(to_float_safe(row.get('bmi')))
                 series_by_employee[u] = {
                     'nama': str(df_u.iloc[-1]['nama']) if not df_u.empty else f'UID {u}',
                     'gula_darah_puasa': s_gp,
@@ -2650,6 +2813,7 @@ def dashboard(request):
                     'lingkar_perut': s_lp,
                     'cholesterol': s_ch,
                     'asam_urat': s_au,
+                    'bmi': s_bmi,
                 }
                 employees.append({'uid': u, 'nama': series_by_employee[u]['nama']})
             return JsonResponse({'mode':'multiline','x_dates':x_dates,'employees':employees,'series_by_employee':series_by_employee})
@@ -2822,6 +2986,11 @@ def dashboard(request):
     except Exception:
         latest_checkup_display = latest_check_date_disp
     
+    # Grafik subtab and month range defaults
+    grafik_subtab = forced_subtab or request.GET.get('subtab', 'grafik_kesehatan')
+    grafik_start_month = request.GET.get('start_month', default_start_month)
+    grafik_end_month = request.GET.get('end_month', default_end_month)
+
     context = {
         'active_menu': active_menu,
         'active_submenu': active_submenu,
@@ -2848,7 +3017,155 @@ def dashboard(request):
         'available_employees': available_employees,
         'default_start_month': default_start_month,
         'default_end_month': default_end_month,
+        # Grafik context keys
+        'grafik_subtab': grafik_subtab,
+        'grafik_start_month': grafik_start_month,
+        'grafik_end_month': grafik_end_month,
+        # Chart html placeholders
+        'grafik_chart_html': None,
+        'well_unwell_chart_html': None,
     }
+
+    # Server-rendered Plotly: Grafik Kesehatan
+    if active_submenu == 'grafik' and grafik_subtab == 'grafik_kesehatan':
+        try:
+            # Load data source
+            try:
+                df_src = load_checkups()
+            except Exception:
+                df_src = pd.DataFrame()
+            if not hasattr(df_src, 'empty') or df_src.empty:
+                try:
+                    df_src = get_dashboard_checkup_data()
+                except Exception:
+                    df_src = pd.DataFrame()
+            # Determine date column
+            date_col = None
+            now = pd.Timestamp.now() if pd is not None else None
+            df_src = df_src.copy()
+            if hasattr(df_src, 'empty') and not df_src.empty:
+                if 'tanggal_MCU' in df_src.columns and pd is not None:
+                    df_src['tanggal_MCU_raw'] = df_src['tanggal_MCU']
+                    df_src['tanggal_MCU'] = pd.to_datetime(df_src['tanggal_MCU'], errors='coerce', dayfirst=True)
+                    if df_src['tanggal_MCU'].isna().all():
+                        df_src['tanggal_MCU'] = pd.to_datetime(df_src['tanggal_MCU_raw'], format='%d/%m/%y', errors='coerce')
+                    date_col = 'tanggal_MCU'
+                elif 'tanggal_checkup' in df_src.columns and pd is not None:
+                    df_src['tanggal_checkup'] = pd.to_datetime(df_src['tanggal_checkup'], errors='coerce', dayfirst=True)
+                    date_col = 'tanggal_checkup'
+                else:
+                    # Synthetic month fallback when no date column detected
+                    from datetime import datetime
+                    synthetic_month = datetime.now().strftime('%Y-%m')
+                    df_src['synthetic_month'] = synthetic_month
+            # Filter by month range and uid
+            if pd is not None:
+                start_dt = pd.to_datetime(grafik_start_month + '-01', errors='coerce') if grafik_start_month else pd.Timestamp(year=now.year, month=now.month, day=1)
+                end_dt = pd.to_datetime(grafik_end_month + '-01', errors='coerce') if grafik_end_month else pd.Timestamp(year=now.year, month=now.month, day=1)
+                end_dt_end = (end_dt + pd.offsets.MonthBegin(1)) - pd.Timedelta(days=1)
+            uid = request.GET.get('uid', '')
+            df_plot = df_src.copy()
+            if pd is not None and date_col:
+                df_plot = df_plot.dropna(subset=[date_col])
+                df_plot = df_plot[(df_plot[date_col] >= start_dt) & (df_plot[date_col] <= end_dt_end)]
+            if uid and uid != 'all' and 'uid' in df_plot.columns:
+                df_plot = df_plot[df_plot['uid'].astype(str) == str(uid)]
+            # Prepare x-axis
+            x_vals = []
+            if pd is not None and date_col:
+                x_vals = df_plot[date_col].dt.strftime('%Y-%m-%d').fillna('').tolist()
+            else:
+                x_vals = df_plot.get('synthetic_month', []).tolist()
+            # Helper to coerce floats
+            def to_float_safe(val):
+                try:
+                    return float(val)
+                except Exception:
+                    return None
+            # Build traces
+            fig = go.Figure()
+            param_map = [
+                ('Gula Darah Puasa', 'gula_darah_puasa'),
+                ('Gula Darah Sewaktu', 'gula_darah_sewaktu'),
+                ('Cholesterol', 'cholesterol'),
+                ('Asam Urat', 'asam_urat'),
+                ('BMI', 'bmi'),
+            ]
+            # Aggregate mode: when "Semua Karyawan" selected, average values per date
+            if (not uid or uid == 'all') and pd is not None and date_col:
+                try:
+                    agg_cols = [col for _, col in param_map if col in df_plot.columns]
+                    if agg_cols:
+                        df_plot = df_plot.groupby(df_plot[date_col])[agg_cols].mean().reset_index()
+                        x_vals = df_plot[date_col].dt.strftime('%Y-%m-%d').fillna('').tolist()
+                except Exception:
+                    pass
+            for label, colname in param_map:
+                if colname in df_plot.columns:
+                    try:
+                        y_vals = df_plot[colname].apply(to_float_safe).tolist()
+                    except Exception:
+                        # When pd is None, fallback to simple list conversion
+                        y_vals = [to_float_safe(v) for v in df_plot[colname].tolist()] if hasattr(df_plot, 'tolist') else []
+                    fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines+markers', name=label))
+            fig.update_layout(title='Grafik Kesehatan', xaxis_title='Tanggal', yaxis_title='Nilai', legend_title_text='Parameter')
+            try:
+                print(f"[Grafik Kesehatan] uid={uid}, points={len(x_vals)}; cols={[c for _, c in param_map]}")
+            except Exception:
+                pass
+            context['grafik_chart_html'] = pio.to_html(fig, include_plotlyjs='cdn', full_html=False)
+        except Exception:
+            context['grafik_chart_html'] = None
+
+    # Server-rendered Plotly: Well & Unwell distribution
+    if active_submenu == 'grafik' and grafik_subtab == 'well_unwell':
+        try:
+            # Load data source
+            try:
+                df_src = load_checkups()
+            except Exception:
+                df_src = pd.DataFrame()
+            if not hasattr(df_src, 'empty') or df_src.empty:
+                try:
+                    df_src = get_dashboard_checkup_data()
+                except Exception:
+                    df_src = pd.DataFrame()
+            # Ensure status column exists
+            try:
+                if 'status' not in df_src.columns or (pd is not None and df_src['status'].isna().any()):
+                    df_src['status'] = df_src.apply(compute_status, axis=1)
+            except Exception:
+                pass
+            # Choose date column and filter by month range
+            date_col = None
+            if pd is not None and not df_src.empty:
+                if 'tanggal_MCU' in df_src.columns:
+                    df_src['tanggal_MCU'] = pd.to_datetime(df_src['tanggal_MCU'], errors='coerce', dayfirst=True)
+                    date_col = 'tanggal_MCU'
+                elif 'tanggal_checkup' in df_src.columns:
+                    df_src['tanggal_checkup'] = pd.to_datetime(df_src['tanggal_checkup'], errors='coerce', dayfirst=True)
+                    date_col = 'tanggal_checkup'
+            if pd is not None and date_col:
+                start_dt = pd.to_datetime(grafik_start_month + '-01', errors='coerce') if grafik_start_month else None
+                end_dt = pd.to_datetime(grafik_end_month + '-01', errors='coerce') if grafik_end_month else None
+                end_dt_end = (end_dt + pd.offsets.MonthBegin(1)) - pd.Timedelta(days=1) if end_dt is not None else None
+                df_src = df_src.dropna(subset=[date_col])
+                if start_dt is not None and end_dt_end is not None:
+                    df_src = df_src[(df_src[date_col] >= start_dt) & (df_src[date_col] <= end_dt_end)]
+            # Optional UID filter
+            uid = request.GET.get('uid', '')
+            if uid and uid != 'all' and 'uid' in df_src.columns:
+                df_src = df_src[df_src['uid'].astype(str) == str(uid)]
+            # Compute counts
+            well_count = int((df_src['status'] == 'Well').sum()) if hasattr(df_src, 'empty') and not df_src.empty else total_well
+            unwell_count = int((df_src['status'] == 'Unwell').sum()) if hasattr(df_src, 'empty') and not df_src.empty else total_unwell
+            # Build pie chart
+            fig2 = go.Figure(data=[go.Pie(labels=['Well','Unwell'], values=[well_count, unwell_count], hole=0.4)])
+            fig2.update_layout(title='Well vs Unwell')
+            context['well_unwell_chart_html'] = pio.to_html(fig2, include_plotlyjs=False, full_html=False)
+        except Exception:
+            context['well_unwell_chart_html'] = None
+
     # Upload History context
     if active_submenu == 'upload_history':
         try:
@@ -3196,6 +3513,27 @@ def manage_karyawan_uid(request):
     # Determine active subtab (karyawan or upload_history)
     active_subtab = request.GET.get("subtab", "karyawan")
 
+    # Logs: simple global listing across all UIDs (no filters)
+    manual_logs = []
+    if active_subtab == "logs":
+        try:
+            from core.queries import get_recent_manual_input_logs
+            manual_logs = get_recent_manual_input_logs(limit=200)
+            # Normalize timestamp for template rendering
+            try:
+                from datetime import datetime as _dt
+                for row in manual_logs:
+                    ts = row.get("timestamp")
+                    if isinstance(ts, str):
+                        try:
+                            row["timestamp"] = _dt.fromisoformat(ts)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+        except Exception:
+            manual_logs = []
+
     # Load upload history for the second tab
     try:
         hist_df = get_checkup_upload_history()
@@ -3234,12 +3572,78 @@ def manage_karyawan_uid(request):
         'name_options': name_options,
         'active_subtab': active_subtab,
         'upload_history': upload_history,
+        'manual_logs': manual_logs,
         'MEDIA_URL': settings.MEDIA_URL,
     }
 
     return render(request, "manager/data_management.html", context)
 
 
+
+@require_http_methods(["GET"]) 
+def well_unwell_summary_json(request):
+    """Return Well vs Unwell totals as JSON filtered by month (YYYY-MM) and lokasi kerja."""
+    # Basic auth guard similar to dashboard (allow Manager and Tenaga Kesehatan)
+    role = request.session.get("user_role")
+    if not request.session.get("authenticated") or role not in ["Manager", "Tenaga Kesehatan"]:
+        return JsonResponse({"error": "unauthorized"}, status=401)
+
+    month = request.GET.get("month", "")
+    lokasi = request.GET.get("lokasi", "")
+
+    # Load checkup data
+    try:
+        df = load_checkups()
+    except Exception:
+        df = None
+
+    well_count = 0
+    unwell_count = 0
+
+    try:
+        if df is not None and hasattr(df, "empty") and not df.empty:
+            import pandas as _pd
+            # Ensure tanggal_checkup parsed and status present
+            if "tanggal_checkup" in df.columns:
+                try:
+                    df["tanggal_checkup"] = _pd.to_datetime(df["tanggal_checkup"], errors="coerce")
+                except Exception:
+                    pass
+            # Compute status if missing or contains NaN
+            try:
+                if "status" not in df.columns or df["status"].isna().any():
+                    from core.helpers import compute_status as _compute_status
+                    df["status"] = df.apply(_compute_status, axis=1)
+            except Exception:
+                # If compute fails, default unknown to Well to avoid skewing Unwell
+                df["status"] = df.get("status", "Well")
+
+            # Apply filters
+            if month:
+                try:
+                    parts = str(month).split("-")
+                    if len(parts) >= 2:
+                        year = int(parts[0])
+                        mon = int(parts[1])
+                        df = df[(df["tanggal_checkup"].dt.year == year) & (df["tanggal_checkup"].dt.month == mon)]
+                except Exception:
+                    pass
+            if lokasi:
+                if "lokasi" in df.columns:
+                    df = df[df["lokasi"].astype(str) == str(lokasi)]
+
+            # Aggregate counts
+            grp = df.groupby("status").size().to_dict()
+            well_count = int(grp.get("Well", 0))
+            unwell_count = int(grp.get("Unwell", 0))
+    except Exception:
+        pass
+
+    data = {
+        "labels": ["Well", "Unwell"],
+        "values": [well_count, unwell_count],
+    }
+    return JsonResponse(data)
 
 # -------------------------
 # Tab 5b: Delete Single Employee (trailing duplicate removed)

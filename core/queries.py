@@ -391,3 +391,228 @@ def get_checkup_upload_history() -> pd.DataFrame:
     if not df.empty:
         df = df.sort_values("timestamp", ascending=False)
     return df
+
+# -------------------------
+# Manual Input Logs
+# -------------------------
+
+def write_manual_input_log(uid: str, actor: str, role: str, event: str, changed_fields=None, new_values=None, checkup_id: str = None):
+    """Write a JSON log entry for manual inputs (edit master/checkup).
+    Stored under UPLOAD_LOG_DIR with prefix 'manual-'.
+    Also includes convenience aliases required by spec: 'user', 'action', and 'target_employee'.
+    """
+    os.makedirs(settings.UPLOAD_LOG_DIR, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    safe_uid = str(uid).replace(os.sep, "-") if uid else "unknown"
+    log_path = os.path.join(settings.UPLOAD_LOG_DIR, f"manual-{safe_uid}-{ts}.json")
+
+    # Try to resolve employee name for target_employee string
+    emp_name = None
+    try:
+        obj = core_models.Karyawan.objects.filter(uid=str(uid)).values("nama").first()
+        if obj and obj.get("nama"):
+            emp_name = obj["nama"]
+    except Exception:
+        emp_name = None
+    target_employee = f"{uid} - {emp_name}" if emp_name else str(uid)
+
+    entry = {
+        "target_uid": uid,
+        "actor": actor,
+        "role": role,
+        "event": event,  # e.g., 'edit_master' or 'manual_checkup_input'
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "checkup_id": checkup_id,
+        "changed_fields": list(changed_fields or []),
+        "new_values": new_values or {},
+        # Convenience aliases for downstream tools/specs
+        "user": actor,
+        "action": event,
+        "target_employee": target_employee,
+    }
+    try:
+        with open(log_path, "w", encoding="utf-8") as f:
+            json.dump(entry, f, ensure_ascii=False, indent=2)
+    except Exception:
+        # Non-fatal: logging should not break main flow
+        pass
+    return log_path
+
+
+def get_manual_input_logs(uid: str) -> pd.DataFrame:
+    """Return DataFrame of manual input logs for a specific UID from UPLOAD_LOG_DIR."""
+    os.makedirs(settings.UPLOAD_LOG_DIR, exist_ok=True)
+    records = []
+    for fname in os.listdir(settings.UPLOAD_LOG_DIR):
+        if not fname.startswith("manual-") or not fname.endswith(".json"):
+            continue
+        path = os.path.join(settings.UPLOAD_LOG_DIR, fname)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                # Filter by target uid
+                if str(data.get("target_uid")) != str(uid):
+                    continue
+                records.append({
+                    "timestamp": pd.to_datetime(data.get("timestamp")),
+                    "event": data.get("event"),
+                    "actor": data.get("actor"),
+                    "role": data.get("role"),
+                    "checkup_id": data.get("checkup_id"),
+                    "changed_fields": data.get("changed_fields", []),
+                    "log_file": fname,
+                })
+        except Exception:
+            # Skip malformed logs
+            continue
+    df = pd.DataFrame(records)
+    if not df.empty:
+        df = df.sort_values("timestamp", ascending=False)
+    return df
+
+# NEW: Global manual input logs with optional month filter (YYYY-MM)
+def get_all_manual_input_logs(month: str | None = None) -> pd.DataFrame:
+    """Return DataFrame of all manual input logs across all UIDs.
+
+    If `month` is provided (format YYYY-MM), only logs from that month are returned.
+    """
+    os.makedirs(settings.UPLOAD_LOG_DIR, exist_ok=True)
+    records = []
+    for fname in os.listdir(settings.UPLOAD_LOG_DIR):
+        if not fname.startswith("manual-") or not fname.endswith(".json"):
+            continue
+        path = os.path.join(settings.UPLOAD_LOG_DIR, fname)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                ts = pd.to_datetime(data.get("timestamp"))
+                records.append({
+                    "timestamp": ts,
+                    "event": data.get("event"),
+                    "actor": data.get("actor"),
+                    "role": data.get("role"),
+                    "checkup_id": data.get("checkup_id"),
+                    "changed_fields": data.get("changed_fields", []),
+                    "target_uid": str(data.get("target_uid")) if data.get("target_uid") is not None else "",
+                    "log_file": fname,
+                })
+        except Exception:
+            # Skip malformed logs
+            continue
+    df = pd.DataFrame(records)
+    if df.empty:
+        return df
+    # Apply month filter if provided (YYYY-MM)
+    if month:
+        try:
+            df = df[df["timestamp"].dt.strftime("%Y-%m") == month]
+        except Exception:
+            # If filter fails, return unfiltered
+            pass
+    return df.sort_values("timestamp", ascending=False)
+
+# NEW (simple, no pandas): Get recent manual input logs globally
+# Returns a list of dicts sorted by timestamp desc. Optionally filter by month (YYYY-MM) and limit the count.
+def get_recent_manual_input_logs(month: str | None = None, limit: int | None = 200) -> list:
+    os.makedirs(settings.UPLOAD_LOG_DIR, exist_ok=True)
+    items = []
+    for fname in os.listdir(settings.UPLOAD_LOG_DIR):
+        if not fname.startswith("manual-") or not fname.endswith(".json"):
+            continue
+        path = os.path.join(settings.UPLOAD_LOG_DIR, fname)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                ts_raw = data.get("timestamp")
+                # Parse timestamp safely
+                try:
+                    from datetime import datetime as _dt
+                    ts = _dt.fromisoformat(ts_raw) if isinstance(ts_raw, str) else None
+                except Exception:
+                    ts = None
+                item = {
+                    "timestamp": ts_raw if ts is None else ts,  # leave as str if parsing fails
+                    "actor": data.get("actor"),
+                    "role": data.get("role"),
+                    "event": data.get("event"),
+                    "target_uid": str(data.get("target_uid")) if data.get("target_uid") is not None else "",
+                    "checkup_id": data.get("checkup_id"),
+                }
+                items.append(item)
+        except Exception:
+            continue
+    # Sort by timestamp desc (convert to str for consistent comparison if needed)
+    def _key(x):
+        v = x.get("timestamp")
+        try:
+            from datetime import datetime as _dt
+            if isinstance(v, str):
+                return _dt.fromisoformat(v)
+            return v
+        except Exception:
+            return v or ""
+    items.sort(key=_key, reverse=True)
+    # Month filter (YYYY-MM)
+    if month:
+        filtered = []
+        for x in items:
+            v = x.get("timestamp")
+            try:
+                from datetime import datetime as _dt
+                if isinstance(v, str):
+                    if v[:7] == month:
+                        filtered.append(x)
+                elif isinstance(v, _dt):
+                    if v.strftime("%Y-%m") == month:
+                        filtered.append(x)
+                else:
+                    # unknown format, keep
+                    filtered.append(x)
+            except Exception:
+                filtered.append(x)
+        items = filtered
+    if isinstance(limit, int) and limit > 0:
+        items = items[:limit]
+    return items
+
+
+def get_well_unwell_summary(month: str = None, lokasi: str = None):
+    """Aggregate Well vs Unwell totals filtered by month (YYYY-MM) and lokasi.
+    Returns a dict: {"Well": int, "Unwell": int}
+    """
+    df = None
+    try:
+        df = load_checkups()
+    except Exception:
+        df = None
+
+    well_count = 0
+    unwell_count = 0
+
+    if df is not None and hasattr(df, "empty") and not df.empty:
+        # Ensure tanggal_checkup parsed
+        if "tanggal_checkup" in df.columns:
+            df["tanggal_checkup"] = pd.to_datetime(df["tanggal_checkup"], errors="coerce")
+        # Compute status if missing or NaN
+        try:
+            if "status" not in df.columns or df["status"].isna().any():
+                from core.helpers import compute_status as _compute_status
+                df["status"] = df.apply(_compute_status, axis=1)
+        except Exception:
+            df["status"] = df.get("status", "Well")
+        # Filters
+        if month:
+            try:
+                parts = str(month).split("-")
+                if len(parts) >= 2:
+                    year = int(parts[0]); mon = int(parts[1])
+                    df = df[(df["tanggal_checkup"].dt.year == year) & (df["tanggal_checkup"].dt.month == mon)]
+            except Exception:
+                pass
+        if lokasi:
+            if "lokasi" in df.columns:
+                df = df[df["lokasi"].astype(str) == str(lokasi)]
+        grp = df.groupby("status").size().to_dict()
+        well_count = int(grp.get("Well", 0))
+        unwell_count = int(grp.get("Unwell", 0))
+    return {"Well": well_count, "Unwell": unwell_count}

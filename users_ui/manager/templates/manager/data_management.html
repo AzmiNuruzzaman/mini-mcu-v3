@@ -9,6 +9,7 @@
         <a href="{% url 'manager:hapus_data_karyawan' %}?subtab=karyawan" class="px-3 py-2 rounded {% if active_subtab == 'karyawan' %}bg-blue-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">Hapus Data Karyawan</a>
         <a href="{% url 'manager:hapus_data_karyawan' %}?subtab=checkup" class="px-3 py-2 rounded {% if active_subtab == 'checkup' %}bg-blue-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">Hapus Checkup Data</a>
         <a href="{% url 'manager:hapus_data_karyawan' %}?subtab=upload_history" class="px-3 py-2 rounded {% if active_subtab == 'upload_history' %}bg-blue-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">Upload History</a>
+        <a href="{% url 'manager:hapus_data_karyawan' %}?subtab=logs" class="px-3 py-2 rounded {% if active_subtab == 'logs' %}bg-blue-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">Logs</a>
     </div>
 
     <!-- Hapus Data Karyawan Content -->
@@ -161,6 +162,41 @@
                     </tbody>
                 </table>
             </div>
+        </div>
+    </div>
+
+    <!-- Logs Content -->
+    <div class="{% if active_subtab == 'logs' %}{% else %}hidden{% endif %}">
+        <div class="mt-3">
+            <h3 class="text-xl font-semibold text-gray-700 mb-3">Logs Manual Input</h3>
+            {% if manual_logs and manual_logs|length > 0 %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full table-auto border-collapse border border-gray-300">
+                    <thead>
+                        <tr class="bg-gray-100">
+                            <th class="border px-4 py-2 text-left">No</th>
+                            <th class="border px-4 py-2 text-left">Waktu</th>
+                            <th class="border px-4 py-2 text-left">Akun</th>
+                            <th class="border px-4 py-2 text-left">Event</th>
+                            <th class="border px-4 py-2 text-left">UID</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in manual_logs %}
+                        <tr>
+                            <td class="border px-4 py-2">{{ forloop.counter }}</td>
+                            <td class="border px-4 py-2">{% if log.timestamp %}{{ log.timestamp|date:"Y-m-d H:i" }}{% else %}-{% endif %}</td>
+                            <td class="border px-4 py-2">{{ log.actor|default:"-" }}</td>
+                            <td class="border px-4 py-2">{{ log.event|default:"-" }}</td>
+                            <td class="border px-4 py-2">{{ log.target_uid|default:"-" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-4 bg-gray-50 border rounded text-gray-500">Belum ada logs.</div>
+            {% endif %}
         </div>
     </div>
 

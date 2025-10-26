@@ -10,6 +10,9 @@ urlpatterns = [
     # ===============================
     path("", manager_views.dashboard, name="dashboard"),  # dashboard.html
 
+    # JSON API for Grafik → Well & Unwell summary
+    path("grafik/well-unwell-summary/", manager_views.well_unwell_summary_json, name="well_unwell_summary_json"),
+
     # Avatar Upload
     path("upload-avatar/", manager_views.upload_avatar, name="upload_avatar"),
 

@@ -1,5 +1,35 @@
 # utils/validators.py
-import pandas as pd
+try:
+    import pandas as pd
+except Exception:
+    class _PDStub:
+        class DataFrame:
+            pass
+        class Timestamp:
+            def __init__(self, *args, **kwargs):
+                pass
+        @staticmethod
+        def isna(x):
+            return x is None
+        @staticmethod
+        def notna(x):
+            return x is not None
+        @staticmethod
+        def to_datetime(val, errors='coerce', dayfirst=False, origin=None, unit=None, format=None):
+            try:
+                from datetime import datetime
+                if isinstance(val, (int, float)):
+                    return None
+                if isinstance(val, str):
+                    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y"):
+                        try:
+                            return datetime.strptime(val, fmt)
+                        except ValueError:
+                            continue
+                return None
+            except Exception:
+                return None
+    pd = _PDStub()
 from datetime import datetime
 
 # -----------------------------

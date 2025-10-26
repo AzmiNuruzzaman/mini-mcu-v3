@@ -1,6 +1,9 @@
 # core/helpers.py
 from core.queries import get_employees, get_latest_medical_checkup
-import pandas as pd
+try:
+    import pandas as pd
+except Exception:
+    pd = None
 
 # ---------------------------
 # Lokasi Helpers
@@ -47,12 +50,26 @@ def sanitize_df_for_display(df: pd.DataFrame) -> pd.DataFrame:
 
     for col in df_safe.columns:
         # Convert UUID-like objects to string
-        if df_safe[col].dtype == 'object':
+        if getattr(df_safe[col], 'dtype', None) == 'object':
             df_safe[col] = df_safe[col].apply(lambda x: str(x) if x is not None else '')
 
         # Convert datetime/date objects to string
-        if pd.api.types.is_datetime64_any_dtype(df_safe[col]):
-            df_safe[col] = df_safe[col].apply(lambda x: x.strftime('%Y-%m-%d') if pd.notna(x) else '')
+        try:
+            if pd and pd.api.types.is_datetime64_any_dtype(df_safe[col]):
+                # Format tanggal_checkup specifically as DD/MM/YY
+                if col == 'tanggal_checkup':
+                    df_safe[col] = df_safe[col].apply(lambda x: x.strftime('%d/%m/%y') if (pd and pd.notna(x)) else '')
+                else:
+                    df_safe[col] = df_safe[col].apply(lambda x: x.strftime('%Y-%m-%d') if (pd and pd.notna(x)) else '')
+        except Exception:
+            # Fallback: attempt formatting if values look like datetime
+            try:
+                if col == 'tanggal_checkup':
+                    df_safe[col] = df_safe[col].apply(lambda x: x.strftime('%d/%m/%y') if hasattr(x, 'strftime') else (str(x) if x is not None else ''))
+                else:
+                    df_safe[col] = df_safe[col].apply(lambda x: x.strftime('%Y-%m-%d') if hasattr(x, 'strftime') else (str(x) if x is not None else ''))
+            except Exception:
+                pass
 
     return df_safe
 
@@ -72,10 +89,11 @@ def compute_status(row):
 # New helper: BMI category (display-only)
 def compute_bmi_category(bmi_value):
     try:
-        bmi = pd.to_numeric(bmi_value, errors='coerce')
+        # Avoid pandas dependency; safely coerce to float
+        bmi = float(bmi_value)
     except Exception:
         bmi = None
-    if pd.isna(bmi):
+    if bmi is None:
         return None
     if bmi < 18.5:
         return "Underweight"

@@ -1,0 +1,99 @@
+<div id="well-unwell-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4 {% if grafik_subtab != 'well_unwell' %}hidden{% endif %}">
+  <h2 class="text-xl font-bold mb-3">Distribusi Well &amp; Unwell</h2>
+
+  <div class="mb-4 flex items-center gap-2">
+    <label for="wu-month" class="font-medium">Bulan:</label>
+    <input type="month" id="wu-month" class="border px-2 py-1 rounded" value="{{ request.GET.month|default:'' }}"/>
+
+    <label for="wu-lokasi" class="font-medium ml-2">Lokasi Kerja:</label>
+    <select id="wu-lokasi" class="border px-2 py-1 rounded">
+      <option value="">Semua Lokasi</option>
+      {% if available_lokasi %}
+        {% for lk in available_lokasi %}
+          {% if lk %}
+          <option value="{{ lk }}">{{ lk }}</option>
+          {% endif %}
+        {% endfor %}
+      {% endif %}
+    </select>
+
+    <button id="wu-refresh" class="ml-2 bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Terapkan</button>
+  </div>
+
+  <div id="wellUnwellChart" class="w-full min-h-[320px]"></div>
+</div>
+
+<script>
+(function(){
+  // Only initialize if subtab is active
+  const container = document.getElementById('well-unwell-content');
+  if (!container || container.classList.contains('hidden')) return;
+
+  const monthInput = document.getElementById('wu-month');
+  const lokasiSelect = document.getElementById('wu-lokasi');
+  const refreshBtn = document.getElementById('wu-refresh');
+  const chartDiv = document.getElementById('wellUnwellChart');
+  const endpoint = "{% url 'manager:well_unwell_summary_json' %}";
+
+  // Default month to current if empty
+  if (monthInput && !monthInput.value) {
+    const d = new Date();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    monthInput.value = `${d.getFullYear()}-${m}`;
+  }
+
+  async function fetchData() {
+    const params = new URLSearchParams();
+    const month = monthInput.value;
+    const lokasi = lokasiSelect.value;
+    if (month) params.set('month', month);
+    if (lokasi) params.set('lokasi', lokasi);
+
+    const url = `${endpoint}?${params.toString()}`;
+    try {
+      const res = await fetch(url, { credentials: 'same-origin' });
+      const data = await res.json();
+      if (data.error) {
+        console.error('API error:', data.error);
+        return;
+      }
+      renderChart(data);
+    } catch (e) {
+      console.error('Failed to fetch Well/Unwell data', e);
+    }
+  }
+
+  function renderChart(data) {
+    const labels = (data && data.labels) || ['Well','Unwell'];
+    const values = (data && data.values) || [0,0];
+
+    const trace = {
+      x: labels,
+      y: values,
+      type: 'bar',
+      marker: {
+        color: labels.map(l => l === 'Well' ? '#28a745' : '#dc3545')
+      }
+    };
+
+    const layout = {
+      title: 'Total Well vs Unwell',
+      xaxis: { title: 'Status' },
+      yaxis: { title: 'Jumlah', rangemode: 'tozero' },
+      margin: { t: 40, r: 20, b: 60, l: 50 },
+      height: 360
+    };
+
+    Plotly.newPlot(chartDiv, [trace], layout, {responsive: true});
+  }
+
+  function bindEvents() {
+    if (refreshBtn) refreshBtn.addEventListener('click', fetchData);
+    if (monthInput) monthInput.addEventListener('change', fetchData);
+    if (lokasiSelect) lokasiSelect.addEventListener('change', fetchData);
+  }
+
+  bindEvents();
+  fetchData();
+})();
+</script>

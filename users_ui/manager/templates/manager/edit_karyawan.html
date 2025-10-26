@@ -328,22 +328,6 @@
                 <td class="border px-4 py-2">{{ latest_checkup.lingkar_perut|default:"-" }}</td>
               </tr>
               <tr>
-                <td class="border px-4 py-2">Gula Darah Puasa</td>
-                <td class="border px-4 py-2">{{ latest_checkup.gula_darah_puasa|default:"-" }}</td>
-              </tr>
-              <tr>
-                <td class="border px-4 py-2">Gula Darah Sewaktu</td>
-                <td class="border px-4 py-2">{{ latest_checkup.gula_darah_sewaktu|default:"-" }}</td>
-              </tr>
-              <tr>
-                <td class="border px-4 py-2">Cholesterol</td>
-                <td class="border px-4 py-2">{{ latest_checkup.cholesterol|default:"-" }}</td>
-              </tr>
-              <tr>
-                <td class="border px-4 py-2">Asam Urat</td>
-                <td class="border px-4 py-2">{{ latest_checkup.asam_urat|default:"-" }}</td>
-              </tr>
-              <tr>
                 <td class="border px-4 py-2">Status</td>
                 <td class="border px-4 py-2">
                   {% if latest_checkup and latest_checkup.status %}
@@ -550,7 +534,7 @@
                 <input type="number" id="umur-{{ row.checkup_id }}" value="{{ row.umur|default:'' }}" class="w-24 border px-2 py-1 rounded" disabled />
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
-                <input type="number" step="0.01" id="bmi-{{ row.checkup_id }}" value="{{ row.bmi|default:'' }}" class="w-24 border px-2 py-1 rounded" disabled />
+                <input type="number" step="0.01" id="bmi-{{ row.checkup_id }}" value="{{ row.bmi|default:'' }}" class="w-24 border px-2 py-1 rounded {% if row.flags and row.flags.bmi_high %}text-red-600 font-semibold{% endif %}" disabled />
               </td>
               <td class="px-6 py-4 whitespace-nowrap">{{ row.bmi_category|default:"-" }}</td>
               <td class="px-6 py-4 whitespace-nowrap">
@@ -560,16 +544,16 @@
                 <input type="number" step="0.01" id="lingkar_perut-{{ row.checkup_id }}" value="{{ row.lingkar_perut|default:'' }}" class="w-24 border px-2 py-1 rounded" disabled />
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
-                <input type="number" step="0.01" id="gula_darah_puasa-{{ row.checkup_id }}" value="{{ row.gula_darah_puasa|default:'' }}" class="w-24 border px-2 py-1 rounded" disabled />
+                <input type="number" step="0.01" id="gula_darah_puasa-{{ row.checkup_id }}" value="{{ row.gula_darah_puasa|default:'' }}" class="w-24 border px-2 py-1 rounded {% if row.flags and row.flags.gdp_high %}text-red-600 font-semibold{% endif %}" disabled />
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
-                <input type="number" step="0.01" id="gula_darah_sewaktu-{{ row.checkup_id }}" value="{{ row.gula_darah_sewaktu|default:'' }}" class="w-24 border px-2 py-1 rounded" disabled />
+                <input type="number" step="0.01" id="gula_darah_sewaktu-{{ row.checkup_id }}" value="{{ row.gula_darah_sewaktu|default:'' }}" class="w-24 border px-2 py-1 rounded {% if row.flags and row.flags.gds_high %}text-red-600 font-semibold{% endif %}" disabled />
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
-                <input type="number" step="0.01" id="cholesterol-{{ row.checkup_id }}" value="{{ row.cholesterol|default:'' }}" class="w-24 border px-2 py-1 rounded" disabled />
+                <input type="number" step="0.01" id="cholesterol-{{ row.checkup_id }}" value="{{ row.cholesterol|default:'' }}" class="w-24 border px-2 py-1 rounded {% if row.flags and row.flags.chol_high %}text-red-600 font-semibold{% endif %}" disabled />
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
-                <input type="number" step="0.01" id="asam_urat-{{ row.checkup_id }}" value="{{ row.asam_urat|default:'' }}" class="w-24 border px-2 py-1 rounded" disabled />
+                <input type="number" step="0.01" id="asam_urat-{{ row.checkup_id }}" value="{{ row.asam_urat|default:'' }}" class="w-24 border px-2 py-1 rounded {% if row.flags and row.flags.asam_high %}text-red-600 font-semibold{% endif %}" disabled />
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
                 <input type="text" id="tekanan_darah-{{ row.checkup_id }}" value="{{ row.tekanan_darah|default:'' }}" class="w-28 border px-2 py-1 rounded" disabled />
@@ -685,9 +669,48 @@
         <div class="w-full overflow-x-auto">
           {{ grafik_chart_html|safe }}
         </div>
+        <script>
+          document.addEventListener('DOMContentLoaded', function(){
+            var grafContainer = document.querySelector('#grafik-content .plotly-graph-div');
+            if (!grafContainer || typeof Plotly === 'undefined' || !Plotly.relayout) return;
+            var thresholds = {
+              'BMI': 30,
+              'Gula Darah Puasa': 120,
+              'Gula Darah Sewaktu': 200,
+              'Cholesterol': 240,
+              'Asam Urat': 7
+            };
+            grafContainer.on('plotly_legendclick', function(ev){
+              try {
+                var idx = ev.curveNumber;
+                var d = ev.data || (ev.fullData || []);
+                var name = (d && d[idx] && d[idx].name) ? d[idx].name : null;
+                if (!name) return true;
+                var thr = thresholds[name];
+                var shapes = [];
+                if (thr != null) {
+                  shapes = [{ type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y', y0: thr, y1: thr, line: { color: 'rgba(255,0,0,0.35)', width: 2, dash: 'dash' } }];
+                }
+                Plotly.relayout(grafContainer, { shapes: shapes });
+              } catch(e) {}
+              return true;
+            });
+            grafContainer.on('plotly_click', function(ev){
+              try {
+                var pt = ev.points && ev.points[0];
+                var name = pt && pt.data && pt.data.name;
+                var thr = thresholds[name];
+                if (thr == null) return;
+                var shape = { type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y', y0: thr, y1: thr, line: { color: 'rgba(255,0,0,0.35)', width: 2, dash: 'dash' } };
+                Plotly.relayout(grafContainer, { shapes: [shape] });
+              } catch(e) {}
+            });
+          });
+        </script>
       {% else %}
         <div class="p-4 bg-gray-50 border rounded text-gray-500">Belum ada data grafik untuk range ini.</div>
       {% endif %}
   </div>
+
 </div>
 {% endblock %}

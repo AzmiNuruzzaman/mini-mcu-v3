@@ -278,6 +278,27 @@ def nurse_index(request):
     default_start_month = default_start_month_dt.strftime('%Y-%m')
     default_end_month = default_end_month_dt.strftime('%Y-%m')
 
+    # Manager-style Grafik subtab and month range variables (match Manager dashboard)
+    grafik_subtab = request.GET.get('subtab', 'grafik_kesehatan')
+    grafik_start_month = request.GET.get('start_month', default_start_month)
+    grafik_end_month = request.GET.get('end_month', default_end_month)
+
+    # --- Grafik Kesehatan in-dashboard ---
+    merged_chart_html = None
+    if active_submenu == "grafik" and grafik_subtab == "grafik_kesehatan":
+        # Call the grafik logic directly to get context; fallback to internal helper
+        from users_ui.nurse.nurse_views import nurse_grafik_kesehatan, nurse_grafik_kesehatan_logic
+        resp = nurse_grafik_kesehatan(request)
+        grafik_context = getattr(resp, "context_data", None)
+        if not grafik_context or "grafik_chart_html" not in grafik_context:
+            try:
+                merged_chart_html = nurse_grafik_kesehatan_logic(request)
+            except Exception:
+                merged_chart_html = None
+        else:
+            merged_chart_html = grafik_context.get("grafik_chart_html")
+    # ----------------------------------------
+
     # Available employees for UID dropdown in Grafik
     available_employees = []
     try:
@@ -364,8 +385,8 @@ def nurse_index(request):
         # Ensure both expected status columns exist as Series to avoid scalar fallbacks
         pivot = pivot.reindex(columns=['well', 'unwell'], fill_value=0)
 
-        # Build Plotly figure
-        if not pivot.empty:
+        # Build Plotly figure (only for Well/Unwell subtab)
+        if grafik_subtab == 'well_unwell' and not pivot.empty:
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=pivot.index, y=pivot['well'], mode='lines+markers', name='Well', line=dict(color='green')))
             fig.add_trace(go.Scatter(x=pivot.index, y=pivot['unwell'], mode='lines+markers', name='Unwell', line=dict(color='red')))
@@ -409,11 +430,15 @@ def nurse_index(request):
         "checkup_counts": checkup_counts,
         "dept_names": dept_names,
         "dept_counts": dept_counts,
-        "grafik_chart_html": grafik_chart_html,
+        "grafik_chart_html": merged_chart_html if merged_chart_html is not None else grafik_chart_html,
         # Added for Nurse Grafik replication
         "available_employees": available_employees,
         "default_start_month": default_start_month,
         "default_end_month": default_end_month,
+        # Manager-style Grafik context
+        "grafik_subtab": grafik_subtab,
+        "grafik_start_month": grafik_start_month,
+        "grafik_end_month": grafik_end_month,
         "active_menu_label": "Dashboard",
         "success_message": success_message,
         "error_message": error_message,
@@ -583,6 +608,83 @@ def nurse_karyawan_detail(request, uid):
             mapped_subtab = "profile" if submenu == "edit" else "edit_data"
             return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": requested_uid}) + f"?submenu=data_karyawan&subtab={mapped_subtab}")
         return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": requested_uid}) + f"?submenu={submenu}{f'&subtab={subtab}' if subtab else ''}")
+
+    # Handle per-row edit or bulk inline save (History Medical Check Up)
+    if request.method == "POST" and (request.POST.get("save_changes") or request.POST.get("action") == "edit_row"):
+        # Per-row Edit + Save (manager-style)
+        if request.POST.get("action") == "edit_row":
+            from core.core_models import Checkup
+            checkup_id = request.POST.get("checkup_id")
+            if checkup_id:
+                fields = ["tanggal_checkup","lingkar_perut","gula_darah_puasa","gula_darah_sewaktu","cholesterol","asam_urat","tekanan_darah","derajat_kesehatan"]
+                update_data = {}
+                for f in fields:
+                    val = request.POST.get(f)
+                    if val not in (None, ""):
+                        update_data[f] = val
+                # Normalize tanggal_checkup to date if possible
+                try:
+                    if update_data.get("tanggal_checkup"):
+                        dt = pd.to_datetime(update_data["tanggal_checkup"], errors="coerce")
+                        if pd.notna(dt):
+                            update_data["tanggal_checkup"] = dt.date()
+                except Exception:
+                    pass
+                if update_data:
+                    Checkup.objects.filter(checkup_id=checkup_id).update(**update_data)
+            return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": uid}) + "?submenu=history")
+        import json
+        from core.core_models import Checkup
+        edited_data_raw = request.POST.get("edited_table_data")
+        try:
+            rows = json.loads(edited_data_raw) if edited_data_raw else []
+        except Exception:
+            rows = []
+        saved = 0
+        for item in rows:
+            try:
+                checkup_id = item.get("checkup_id")
+                if not checkup_id:
+                    continue
+                # Read fields from edited row
+                tanggal_checkup = item.get("tanggal_checkup")
+                lingkar_perut = item.get("lingkar_perut")
+                gula_darah_puasa = item.get("gula_darah_puasa")
+                gula_darah_sewaktu = item.get("gula_darah_sewaktu")
+                cholesterol = item.get("cholesterol")
+                asam_urat = item.get("asam_urat")
+                tekanan_darah = item.get("tekanan_darah")
+                derajat_kesehatan = item.get("derajat_kesehatan")
+                # Safe conversions
+                update_data = {
+                    "lingkar_perut": float(lingkar_perut) if lingkar_perut not in (None, "") else None,
+                    "gula_darah_puasa": float(gula_darah_puasa) if gula_darah_puasa not in (None, "") else None,
+                    "gula_darah_sewaktu": float(gula_darah_sewaktu) if gula_darah_sewaktu not in (None, "") else None,
+                    "cholesterol": float(cholesterol) if cholesterol not in (None, "") else None,
+                    "asam_urat": float(asam_urat) if asam_urat not in (None, "") else None,
+                    "tekanan_darah": str(tekanan_darah).strip() if tekanan_darah not in (None, "") else None,
+                    "derajat_kesehatan": str(derajat_kesehatan).strip() if derajat_kesehatan not in (None, "") else None,
+                }
+                if tanggal_checkup:
+                    dt = pd.to_datetime(tanggal_checkup, dayfirst=True, errors="coerce")
+                    if pd.notna(dt):
+                        update_data["tanggal_checkup"] = dt.date()
+                # Drop None values to avoid overriding with NULL
+                update_data = {k: v for k, v in update_data.items() if v is not None}
+                if update_data:
+                    Checkup.objects.filter(checkup_id=checkup_id).update(**update_data)
+                    saved += 1
+            except Exception:
+                continue
+        # Optional audit log
+        try:
+            from core.queries import write_manual_input_log
+            actor = request.session.get("username") or "unknown"
+            write_manual_input_log(uid=str(uid), actor=actor, role="Tenaga Kesehatan", event="manual_checkup_input", changed_fields=[], new_values={}, checkup_id=None)
+        except Exception:
+            pass
+        request.session["success_message"] = f"Berhasil menyimpan {saved} perubahan."
+        return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": uid}) + "?submenu=history")
 
     # Determine active submenu and subtab
     active_submenu = request.GET.get("submenu", "data_karyawan")
@@ -759,8 +861,23 @@ def nurse_karyawan_detail(request, uid):
                 tc_dt = pd.to_datetime(row.get('tanggal_checkup'), errors='coerce')
                 tanggal_str = tc_dt.strftime('%d/%m/%y') if pd.notna(tc_dt) else None
 
-                # Status based on thresholds
-                status_val = compute_status(row)
+                # Status based on thresholds (use parsed numerics to avoid string issues)
+                status_val = compute_status({
+                    'gula_darah_puasa': gdp_n if pd.notna(gdp_n) else 0,
+                    'gula_darah_sewaktu': gds_n if pd.notna(gds_n) else 0,
+                    'cholesterol': chol_n if pd.notna(chol_n) else 0,
+                    'asam_urat': asam_n if pd.notna(asam_n) else 0,
+                    'bmi': bmi_n if pd.notna(bmi_n) else 0,
+                })
+
+                # Flags for conditional highlighting (match manager thresholds)
+                flags = {
+                    'bmi_high': (pd.notna(bmi_n) and bmi_n >= 30),
+                    'gdp_high': (pd.notna(gdp_n) and gdp_n > 120),
+                    'gds_high': (pd.notna(gds_n) and gds_n > 200),
+                    'chol_high': (pd.notna(chol_n) and chol_n > 240),
+                    'asam_high': (pd.notna(asam_n) and asam_n > 7),
+                }
 
                 history_dashboard.append({
                     'uid': str(row.get('uid', uid)),
@@ -783,6 +900,7 @@ def nurse_karyawan_detail(request, uid):
                     'tanggal_MCU': emp_tanggal_mcu,
                     'expired_MCU': emp_expired_mcu,
                     'status': status_val,
+                    'flags': flags,
                     'checkup_id': int(row.get('checkup_id')) if row.get('checkup_id') is not None else None,
                 })
     except Exception:
@@ -874,6 +992,9 @@ def nurse_karyawan_detail(request, uid):
     except Exception:
         pass
 
+    # Dynamically control view-only mode: enable inline editing on History tab
+    view_only_flag = False if active_submenu == "history" else True
+
     return render(request, "nurse/edit_karyawan.html", {
         "employee": employee_clean or {},
         "employees": employees,
@@ -884,7 +1005,7 @@ def nurse_karyawan_detail(request, uid):
         "active_submenu": active_submenu,
         "active_subtab": active_subtab,
         "active_menu_label": "Edit Data Checkup",
-        "view_only": True,
+        "view_only": view_only_flag,
         "mcu_expiry_estimate": mcu_expiry_estimate,
         "grafik_chart_html": grafik_chart_html,
         "grafik_start_month": grafik_start_month,
@@ -1193,8 +1314,111 @@ def nurse_export_checkup_history_by_uid(request, uid):
         if "tanggal_checkup" in df.columns:
             df["tanggal_checkup"] = pd.to_datetime(df["tanggal_checkup"], errors="coerce")
         df = df.sort_values("tanggal_checkup", ascending=False)
-        # Build Excel
-        excel_bytes = build_checkup_excel(df)
+
+        # Fetch employee baseline for fallbacks
+        employee_clean = get_employee_by_uid(uid) or {}
+        emp_nama = employee_clean.get('nama')
+        emp_jabatan = employee_clean.get('jabatan')
+        emp_lokasi = employee_clean.get('lokasi')
+        try:
+            tl_dt = pd.to_datetime(employee_clean.get('tanggal_lahir'), errors='coerce')
+            emp_tanggal_lahir = tl_dt.strftime('%d/%m/%y') if pd.notna(tl_dt) else None
+        except Exception:
+            emp_tanggal_lahir = None
+        try:
+            mcu_dt = pd.to_datetime(employee_clean.get('tanggal_MCU'), errors='coerce')
+            emp_tanggal_mcu = mcu_dt.strftime('%d/%m/%y') if pd.notna(mcu_dt) else None
+        except Exception:
+            emp_tanggal_mcu = None
+        try:
+            exp_dt = pd.to_datetime(employee_clean.get('expired_MCU'), errors='coerce')
+            emp_expired_mcu = exp_dt.strftime('%d/%m/%y') if pd.notna(exp_dt) else None
+        except Exception:
+            emp_expired_mcu = None
+
+        # umur and employee BMI fallback
+        try:
+            umur_val_emp = (employee_clean or {}).get('umur', None)
+        except Exception:
+            umur_val_emp = None
+        try:
+            emp_bmi = pd.to_numeric((employee_clean or {}).get('bmi', None), errors='coerce')
+        except Exception:
+            emp_bmi = None
+
+        from core.helpers import compute_bmi_category
+        rows = []
+        for _, row in df.iterrows():
+            tinggi_n = pd.to_numeric(row.get('tinggi', None), errors='coerce')
+            berat_n = pd.to_numeric(row.get('berat', None), errors='coerce')
+            bmi_n = pd.to_numeric(row.get('bmi', None), errors='coerce')
+            # BMI fallback: use employee BMI if row BMI missing/zero
+            try:
+                if ((bmi_n is None) or (isinstance(bmi_n, float) and pd.isna(bmi_n)) or (float(bmi_n) == 0.0)) and pd.notna(emp_bmi):
+                    bmi_n = float(emp_bmi)
+            except Exception:
+                pass
+            lp_n = pd.to_numeric(row.get('lingkar_perut', None), errors='coerce')
+            gdp_n = pd.to_numeric(row.get('gula_darah_puasa', None), errors='coerce')
+            gds_n = pd.to_numeric(row.get('gula_darah_sewaktu', None), errors='coerce')
+            chol_n = pd.to_numeric(row.get('cholesterol', None), errors='coerce')
+            asam_n = pd.to_numeric(row.get('asam_urat', None), errors='coerce')
+            tc_dt = pd.to_datetime(row.get('tanggal_checkup'), errors='coerce')
+            tanggal_str = tc_dt.strftime('%d/%m/%y') if pd.notna(tc_dt) else None
+
+            status_val = compute_status({
+                'gula_darah_puasa': gdp_n if pd.notna(gdp_n) else 0,
+                'gula_darah_sewaktu': gds_n if pd.notna(gds_n) else 0,
+                'cholesterol': chol_n if pd.notna(chol_n) else 0,
+                'asam_urat': asam_n if pd.notna(asam_n) else 0,
+                'bmi': bmi_n if pd.notna(bmi_n) else 0,
+            })
+
+            dk_val = row.get('derajat_kesehatan', None)
+            try:
+                if dk_val is None or (isinstance(dk_val, float) and pd.isna(dk_val)) or (isinstance(dk_val, str) and not dk_val.strip()):
+                    dk_val = (employee_clean or {}).get('derajat_kesehatan')
+            except Exception:
+                pass
+
+            bmi_cat_val = row.get('bmi_category', None)
+            def _is_blank(x):
+                return (x is None) or (isinstance(x, float) and pd.isna(x)) or (isinstance(x, str) and not str(x).strip())
+            if _is_blank(bmi_cat_val):
+                bmi_cat_val = (employee_clean or {}).get('bmi_category', None)
+            if _is_blank(bmi_cat_val):
+                bmi_source = bmi_n if pd.notna(bmi_n) else (emp_bmi if pd.notna(emp_bmi) else None)
+                bmi_cat_val = compute_bmi_category(bmi_source)
+
+            rows.append({
+                'UID': str(row.get('uid', uid)),
+                'Nama': emp_nama,
+                'Jabatan': emp_jabatan,
+                'Lokasi': emp_lokasi,
+                'Tanggal Lahir': emp_tanggal_lahir,
+                'Umur': int(umur_val_emp) if pd.notna(pd.to_numeric(umur_val_emp, errors='coerce')) else None,
+                'BMI': float(bmi_n) if pd.notna(bmi_n) and float(bmi_n) != 0.0 else None,
+                'BMI Category': str(bmi_cat_val) if bmi_cat_val is not None else None,
+                'Tanggal Checkup': tanggal_str,
+                'Lingkar Perut': float(lp_n) if pd.notna(lp_n) else None,
+                'Gula Darah Puasa': float(gdp_n) if pd.notna(gdp_n) else None,
+                'Gula Darah Sewaktu': float(gds_n) if pd.notna(gds_n) else None,
+                'Cholesterol': float(chol_n) if pd.notna(chol_n) else None,
+                'Asam Urat': float(asam_n) if pd.notna(asam_n) else None,
+                'Tekanan Darah': row.get('tekanan_darah', None),
+                'Derajat Kesehatan': str(dk_val) if dk_val is not None else None,
+                'Tanggal MCU': emp_tanggal_mcu,
+                'Expired MCU': emp_expired_mcu,
+                'Status': status_val,
+            })
+
+        import pandas as _pd
+        df_export = _pd.DataFrame(rows)
+        columns_order = [
+            'UID','Nama','Jabatan','Lokasi','Tanggal Lahir','Umur','BMI','BMI Category','Tanggal Checkup','Lingkar Perut','Gula Darah Puasa','Gula Darah Sewaktu','Cholesterol','Asam Urat','Tekanan Darah','Derajat Kesehatan','Tanggal MCU','Expired MCU','Status'
+        ]
+
+        excel_bytes = build_checkup_excel(df_export, enrich=False, columns=columns_order)
         filename = f"checkup_history_{uid}.xlsx"
         response = HttpResponse(excel_bytes, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         response["Content-Disposition"] = f"attachment; filename={filename}"
@@ -1221,7 +1445,102 @@ def nurse_export_checkup_history_by_uid_pdf(request, uid):
         if "tanggal_checkup" in df.columns:
             df["tanggal_checkup"] = pd.to_datetime(df["tanggal_checkup"], errors="coerce")
         df = df.sort_values("tanggal_checkup", ascending=False)
-        pdf_bytes = build_checkup_pdf(df)
+
+        # Fetch employee baseline for fallbacks
+        employee_clean = get_employee_by_uid(uid) or {}
+        emp_nama = employee_clean.get('nama')
+        emp_jabatan = employee_clean.get('jabatan')
+        emp_lokasi = employee_clean.get('lokasi')
+        try:
+            tl_dt = pd.to_datetime(employee_clean.get('tanggal_lahir'), errors='coerce')
+            emp_tanggal_lahir = tl_dt.strftime('%d/%m/%y') if pd.notna(tl_dt) else None
+        except Exception:
+            emp_tanggal_lahir = None
+        try:
+            mcu_dt = pd.to_datetime(employee_clean.get('tanggal_MCU'), errors='coerce')
+            emp_tanggal_mcu = mcu_dt.strftime('%d/%m/%y') if pd.notna(mcu_dt) else None
+        except Exception:
+            emp_tanggal_mcu = None
+        try:
+            exp_dt = pd.to_datetime(employee_clean.get('expired_MCU'), errors='coerce')
+            emp_expired_mcu = exp_dt.strftime('%d/%m/%y') if pd.notna(exp_dt) else None
+        except Exception:
+            emp_expired_mcu = None
+
+        try:
+            emp_bmi = pd.to_numeric((employee_clean or {}).get('bmi', None), errors='coerce')
+        except Exception:
+            emp_bmi = None
+        umur_val_emp = (employee_clean or {}).get('umur', None)
+
+        from core.helpers import compute_bmi_category
+        rows = []
+        for _, row in df.iterrows():
+            tinggi_n = pd.to_numeric(row.get('tinggi', None), errors='coerce')
+            berat_n = pd.to_numeric(row.get('berat', None), errors='coerce')
+            bmi_n = pd.to_numeric(row.get('bmi', None), errors='coerce')
+            lp_n = pd.to_numeric(row.get('lingkar_perut', None), errors='coerce')
+            gdp_n = pd.to_numeric(row.get('gula_darah_puasa', None), errors='coerce')
+            gds_n = pd.to_numeric(row.get('gula_darah_sewaktu', None), errors='coerce')
+            chol_n = pd.to_numeric(row.get('cholesterol', None), errors='coerce')
+            asam_n = pd.to_numeric(row.get('asam_urat', None), errors='coerce')
+            tc_dt = pd.to_datetime(row.get('tanggal_checkup'), errors='coerce')
+            tanggal_str = tc_dt.strftime('%d/%m/%y') if pd.notna(tc_dt) else None
+
+            status_val = compute_status({
+                'gula_darah_puasa': gdp_n if pd.notna(gdp_n) else 0,
+                'gula_darah_sewaktu': gds_n if pd.notna(gds_n) else 0,
+                'cholesterol': chol_n if pd.notna(chol_n) else 0,
+                'asam_urat': asam_n if pd.notna(asam_n) else 0,
+                'bmi': bmi_n if pd.notna(bmi_n) else (float(emp_bmi) if pd.notna(emp_bmi) else 0),
+            })
+
+            bmi_cat_val = row.get('bmi_category', None)
+            def _is_blank(x):
+                return (x is None) or (isinstance(x, float) and pd.isna(x)) or (isinstance(x, str) and not str(x).strip())
+            if _is_blank(bmi_cat_val):
+                bmi_cat_val = (employee_clean or {}).get('bmi_category', None)
+            if _is_blank(bmi_cat_val):
+                bmi_source = bmi_n if pd.notna(bmi_n) and float(bmi_n) != 0.0 else (emp_bmi if pd.notna(emp_bmi) else None)
+                bmi_cat_val = compute_bmi_category(bmi_source)
+
+            rows.append({
+                'UID': str(row.get('uid', uid)),
+                'Nama': emp_nama,
+                'Jabatan': emp_jabatan,
+                'Lokasi': emp_lokasi,
+                'Tanggal Lahir': emp_tanggal_lahir,
+                'Umur': int(umur_val_emp) if pd.notna(pd.to_numeric(umur_val_emp, errors='coerce')) else None,
+                'BMI': float(bmi_n) if pd.notna(bmi_n) and float(bmi_n) != 0.0 else (float(emp_bmi) if pd.notna(emp_bmi) else None),
+                'BMI Category': str(bmi_cat_val) if bmi_cat_val is not None else None,
+                'Tanggal Checkup': tanggal_str,
+                'Lingkar Perut': float(lp_n) if pd.notna(lp_n) else None,
+                'Gula Darah Puasa': float(gdp_n) if pd.notna(gdp_n) else None,
+                'Gula Darah Sewaktu': float(gds_n) if pd.notna(gds_n) else None,
+                'Cholesterol': float(chol_n) if pd.notna(chol_n) else None,
+                'Asam Urat': float(asam_n) if pd.notna(asam_n) else None,
+                'Tekanan Darah': row.get('tekanan_darah', None),
+                'Derajat Kesehatan': row.get('derajat_kesehatan', None) or (employee_clean or {}).get('derajat_kesehatan', None),
+                'Tanggal MCU': emp_tanggal_mcu,
+                'Expired MCU': emp_expired_mcu,
+                'Status': status_val,
+            })
+
+        import pandas as _pd
+        df_export = _pd.DataFrame(rows)
+        columns_order = [
+            'UID','Nama','Jabatan','Lokasi','Tanggal Lahir','Umur','BMI','BMI Category','Tanggal Checkup','Lingkar Perut','Gula Darah Puasa','Gula Darah Sewaktu','Cholesterol','Asam Urat','Tekanan Darah','Derajat Kesehatan','Tanggal MCU','Expired MCU','Status'
+        ]
+
+        pdf_bytes = build_checkup_pdf(
+            df_export,
+            enrich=False,
+            columns=columns_order,
+            orientation='portrait',
+            max_cols_per_table=8,
+            title_text='Mini-MCU Record',
+            list_style=True,
+        )
         filename = f"checkup_history_{uid}.pdf"
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
         response["Content-Disposition"] = f"attachment; filename={filename}"
@@ -1244,7 +1563,88 @@ def nurse_export_checkup_row(request, uid, checkup_id):
         df = _pd.DataFrame(list(qs.values()))
         if "uid_id" in df.columns and "uid" not in df.columns:
             df = df.rename(columns={"uid_id": "uid"})
-        excel_bytes = build_checkup_excel(df)
+
+        # Fetch employee baseline for fallbacks
+        employee_clean = get_employee_by_uid(uid) or {}
+        emp_nama = employee_clean.get('nama')
+        emp_jabatan = employee_clean.get('jabatan')
+        emp_lokasi = employee_clean.get('lokasi')
+        try:
+            tl_dt = pd.to_datetime(employee_clean.get('tanggal_lahir'), errors='coerce')
+            emp_tanggal_lahir = tl_dt.strftime('%d/%m/%y') if pd.notna(tl_dt) else None
+        except Exception:
+            emp_tanggal_lahir = None
+        try:
+            mcu_dt = pd.to_datetime(employee_clean.get('tanggal_MCU'), errors='coerce')
+            emp_tanggal_mcu = mcu_dt.strftime('%d/%m/%y') if pd.notna(mcu_dt) else None
+        except Exception:
+            emp_tanggal_mcu = None
+        try:
+            exp_dt = pd.to_datetime(employee_clean.get('expired_MCU'), errors='coerce')
+            emp_expired_mcu = exp_dt.strftime('%d/%m/%y') if pd.notna(exp_dt) else None
+        except Exception:
+            emp_expired_mcu = None
+        umur_val_emp = employee_clean.get('umur', None)
+        emp_bmi = pd.to_numeric(employee_clean.get('bmi', None), errors='coerce')
+
+        from core.helpers import compute_bmi_category
+        rows = []
+        for _, row in df.iterrows():
+            bmi_n = pd.to_numeric(row.get('bmi', None), errors='coerce')
+            lp_n = pd.to_numeric(row.get('lingkar_perut', None), errors='coerce')
+            gdp_n = pd.to_numeric(row.get('gula_darah_puasa', None), errors='coerce')
+            gds_n = pd.to_numeric(row.get('gula_darah_sewaktu', None), errors='coerce')
+            chol_n = pd.to_numeric(row.get('cholesterol', None), errors='coerce')
+            asam_n = pd.to_numeric(row.get('asam_urat', None), errors='coerce')
+            tc_dt = pd.to_datetime(row.get('tanggal_checkup'), errors='coerce')
+            tanggal_str = tc_dt.strftime('%d/%m/%y') if pd.notna(tc_dt) else None
+
+            status_val = compute_status({
+                'gula_darah_puasa': gdp_n if pd.notna(gdp_n) else 0,
+                'gula_darah_sewaktu': gds_n if pd.notna(gds_n) else 0,
+                'cholesterol': chol_n if pd.notna(chol_n) else 0,
+                'asam_urat': asam_n if pd.notna(asam_n) else 0,
+                'bmi': bmi_n if pd.notna(bmi_n) else (float(emp_bmi) if pd.notna(emp_bmi) else 0),
+            })
+
+            bmi_cat_val = row.get('bmi_category', None)
+            def _is_blank(x):
+                return (x is None) or (isinstance(x, float) and pd.isna(x)) or (isinstance(x, str) and not str(x).strip())
+            if _is_blank(bmi_cat_val):
+                bmi_cat_val = (employee_clean or {}).get('bmi_category', None)
+            if _is_blank(bmi_cat_val):
+                bmi_source = bmi_n if pd.notna(bmi_n) and float(bmi_n) != 0.0 else (emp_bmi if pd.notna(emp_bmi) else None)
+                bmi_cat_val = compute_bmi_category(bmi_source)
+
+            rows.append({
+                'UID': str(row.get('uid', uid)),
+                'Nama': emp_nama,
+                'Jabatan': emp_jabatan,
+                'Lokasi': emp_lokasi,
+                'Tanggal Lahir': emp_tanggal_lahir,
+                'Umur': int(umur_val_emp) if pd.notna(pd.to_numeric(umur_val_emp, errors='coerce')) else None,
+                'BMI': float(bmi_n) if pd.notna(bmi_n) and float(bmi_n) != 0.0 else (float(emp_bmi) if pd.notna(emp_bmi) else None),
+                'BMI Category': str(bmi_cat_val) if bmi_cat_val is not None else None,
+                'Tanggal Checkup': tanggal_str,
+                'Lingkar Perut': float(lp_n) if pd.notna(lp_n) else None,
+                'Gula Darah Puasa': float(gdp_n) if pd.notna(gdp_n) else None,
+                'Gula Darah Sewaktu': float(gds_n) if pd.notna(gds_n) else None,
+                'Cholesterol': float(chol_n) if pd.notna(chol_n) else None,
+                'Asam Urat': float(asam_n) if pd.notna(asam_n) else None,
+                'Tekanan Darah': row.get('tekanan_darah', None),
+                'Derajat Kesehatan': row.get('derajat_kesehatan', None) or (employee_clean or {}).get('derajat_kesehatan', None),
+                'Tanggal MCU': emp_tanggal_mcu,
+                'Expired MCU': emp_expired_mcu,
+                'Status': status_val,
+            })
+
+        import pandas as _pd
+        df_export = _pd.DataFrame(rows)
+        columns_order = [
+            'UID','Nama','Jabatan','Lokasi','Tanggal Lahir','Umur','BMI','BMI Category','Tanggal Checkup','Lingkar Perut','Gula Darah Puasa','Gula Darah Sewaktu','Cholesterol','Asam Urat','Tekanan Darah','Derajat Kesehatan','Tanggal MCU','Expired MCU','Status'
+        ]
+
+        excel_bytes = build_checkup_excel(df_export, enrich=False, columns=columns_order)
         filename = f"checkup_{checkup_id}.xlsx"
         response = HttpResponse(excel_bytes, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         response["Content-Disposition"] = f"attachment; filename={filename}"
@@ -1267,7 +1667,96 @@ def nurse_export_checkup_row_pdf(request, uid, checkup_id):
         df = _pd.DataFrame(list(qs.values()))
         if "uid_id" in df.columns and "uid" not in df.columns:
             df = df.rename(columns={"uid_id": "uid"})
-        pdf_bytes = build_checkup_pdf(df)
+
+        # Fetch employee baseline for fallbacks
+        employee_clean = get_employee_by_uid(uid) or {}
+        emp_nama = employee_clean.get('nama')
+        emp_jabatan = employee_clean.get('jabatan')
+        emp_lokasi = employee_clean.get('lokasi')
+        try:
+            tl_dt = pd.to_datetime(employee_clean.get('tanggal_lahir'), errors='coerce')
+            emp_tanggal_lahir = tl_dt.strftime('%d/%m/%y') if pd.notna(tl_dt) else None
+        except Exception:
+            emp_tanggal_lahir = None
+        try:
+            mcu_dt = pd.to_datetime(employee_clean.get('tanggal_MCU'), errors='coerce')
+            emp_tanggal_mcu = mcu_dt.strftime('%d/%m/%y') if pd.notna(mcu_dt) else None
+        except Exception:
+            emp_tanggal_mcu = None
+        try:
+            exp_dt = pd.to_datetime(employee_clean.get('expired_MCU'), errors='coerce')
+            emp_expired_mcu = exp_dt.strftime('%d/%m/%y') if pd.notna(exp_dt) else None
+        except Exception:
+            emp_expired_mcu = None
+        umur_val_emp = employee_clean.get('umur', None)
+        emp_bmi = pd.to_numeric(employee_clean.get('bmi', None), errors='coerce')
+
+        from core.helpers import compute_bmi_category
+        rows = []
+        for _, row in df.iterrows():
+            bmi_n = pd.to_numeric(row.get('bmi', None), errors='coerce')
+            lp_n = pd.to_numeric(row.get('lingkar_perut', None), errors='coerce')
+            gdp_n = pd.to_numeric(row.get('gula_darah_puasa', None), errors='coerce')
+            gds_n = pd.to_numeric(row.get('gula_darah_sewaktu', None), errors='coerce')
+            chol_n = pd.to_numeric(row.get('cholesterol', None), errors='coerce')
+            asam_n = pd.to_numeric(row.get('asam_urat', None), errors='coerce')
+            tc_dt = pd.to_datetime(row.get('tanggal_checkup'), errors='coerce')
+            tanggal_str = tc_dt.strftime('%d/%m/%y') if pd.notna(tc_dt) else None
+
+            status_val = compute_status({
+                'gula_darah_puasa': gdp_n if pd.notna(gdp_n) else 0,
+                'gula_darah_sewaktu': gds_n if pd.notna(gds_n) else 0,
+                'cholesterol': chol_n if pd.notna(chol_n) else 0,
+                'asam_urat': asam_n if pd.notna(asam_n) else 0,
+                'bmi': bmi_n if pd.notna(bmi_n) else (float(emp_bmi) if pd.notna(emp_bmi) else 0),
+            })
+
+            bmi_cat_val = row.get('bmi_category', None)
+            def _is_blank(x):
+                return (x is None) or (isinstance(x, float) and pd.isna(x)) or (isinstance(x, str) and not str(x).strip())
+            if _is_blank(bmi_cat_val):
+                bmi_cat_val = (employee_clean or {}).get('bmi_category', None)
+            if _is_blank(bmi_cat_val):
+                bmi_source = bmi_n if pd.notna(bmi_n) and float(bmi_n) != 0.0 else (emp_bmi if pd.notna(emp_bmi) else None)
+                bmi_cat_val = compute_bmi_category(bmi_source)
+
+            rows.append({
+                'UID': str(row.get('uid', uid)),
+                'Nama': emp_nama,
+                'Jabatan': emp_jabatan,
+                'Lokasi': emp_lokasi,
+                'Tanggal Lahir': emp_tanggal_lahir,
+                'Umur': int(umur_val_emp) if pd.notna(pd.to_numeric(umur_val_emp, errors='coerce')) else None,
+                'BMI': float(bmi_n) if pd.notna(bmi_n) and float(bmi_n) != 0.0 else (float(emp_bmi) if pd.notna(emp_bmi) else None),
+                'BMI Category': str(bmi_cat_val) if bmi_cat_val is not None else None,
+                'Tanggal Checkup': tanggal_str,
+                'Lingkar Perut': float(lp_n) if pd.notna(lp_n) else None,
+                'Gula Darah Puasa': float(gdp_n) if pd.notna(gdp_n) else None,
+                'Gula Darah Sewaktu': float(gds_n) if pd.notna(gds_n) else None,
+                'Cholesterol': float(chol_n) if pd.notna(chol_n) else None,
+                'Asam Urat': float(asam_n) if pd.notna(asam_n) else None,
+                'Tekanan Darah': row.get('tekanan_darah', None),
+                'Derajat Kesehatan': row.get('derajat_kesehatan', None) or (employee_clean or {}).get('derajat_kesehatan', None),
+                'Tanggal MCU': emp_tanggal_mcu,
+                'Expired MCU': emp_expired_mcu,
+                'Status': status_val,
+            })
+
+        import pandas as _pd
+        df_export = _pd.DataFrame(rows)
+        columns_order = [
+            'UID','Nama','Jabatan','Lokasi','Tanggal Lahir','Umur','BMI','BMI Category','Tanggal Checkup','Lingkar Perut','Gula Darah Puasa','Gula Darah Sewaktu','Cholesterol','Asam Urat','Tekanan Darah','Derajat Kesehatan','Tanggal MCU','Expired MCU','Status'
+        ]
+
+        pdf_bytes = build_checkup_pdf(
+            df_export,
+            enrich=False,
+            columns=columns_order,
+            orientation='portrait',
+            max_cols_per_table=8,
+            title_text='Mini-MCU Record',
+            list_style=True,
+        )
         filename = f"checkup_{checkup_id}.pdf"
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
         response["Content-Disposition"] = f"attachment; filename={filename}"
@@ -1275,3 +1764,326 @@ def nurse_export_checkup_row_pdf(request, uid, checkup_id):
     except Exception as e:
         request.session['error_message'] = f"Gagal mengekspor data checkup ke PDF: {e}"
         return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": uid}) + "?submenu=history")
+
+# Internal helper to generate grafik_chart_html without rendering
+
+def nurse_grafik_kesehatan_logic(request):
+    uid = request.GET.get('uid', 'all')
+    now2 = pd.Timestamp.now()
+    default_end_month = now2.strftime('%Y-%m')
+    default_start_month = (now2 - pd.offsets.DateOffset(months=5)).strftime('%Y-%m')
+    grafik_start_month = request.GET.get('start_month', default_start_month)
+    grafik_end_month = request.GET.get('end_month', default_end_month)
+
+    grafik_chart_html = None
+    try:
+        if uid and uid != 'all':
+            df_ts = get_medical_checkups_by_uid(uid) or pd.DataFrame()
+            if df_ts is not None and not df_ts.empty:
+                df_ts = df_ts.copy()
+                df_ts['tanggal_checkup'] = pd.to_datetime(df_ts['tanggal_checkup'], errors='coerce')
+                start_dt = pd.to_datetime(grafik_start_month + '-01', errors='coerce') if grafik_start_month else None
+                end_dt = pd.to_datetime(grafik_end_month + '-01', errors='coerce') if grafik_end_month else None
+                if pd.notnull(end_dt):
+                    end_dt = (end_dt + pd.offsets.MonthBegin(1)) - pd.Timedelta(days=1)
+                if pd.notnull(start_dt) and pd.notnull(end_dt):
+                    df_ts = df_ts[(df_ts['tanggal_checkup'] >= start_dt) & (df_ts['tanggal_checkup'] <= end_dt)]
+
+                df_ts = df_ts.sort_values('tanggal_checkup')
+                x_vals = df_ts['tanggal_checkup']
+                gdp = pd.to_numeric(df_ts.get('gula_darah_puasa'), errors='coerce')
+                gds = pd.to_numeric(df_ts.get('gula_darah_sewaktu'), errors='coerce')
+                lp = pd.to_numeric(df_ts.get('lingkar_perut'), errors='coerce')
+                chol = pd.to_numeric(df_ts.get('cholesterol'), errors='coerce')
+                asam = pd.to_numeric(df_ts.get('asam_urat'), errors='coerce')
+                def _parse_systolic(val):
+                    try:
+                        s = str(val)
+                        if '/' in s:
+                            return pd.to_numeric(s.split('/')[0], errors='coerce')
+                        return pd.to_numeric(val, errors='coerce')
+                    except Exception:
+                        return pd.NA
+                td_systolic = df_ts['tekanan_darah'].apply(_parse_systolic) if 'tekanan_darah' in df_ts.columns else pd.Series([], dtype='float64')
+
+                fig = go.Figure()
+                if not x_vals.empty:
+                    if gdp is not None and not gdp.empty:
+                        fig.add_trace(go.Scatter(x=x_vals, y=gdp, mode='lines+markers', name='Gula Darah Puasa'))
+                    if gds is not None and not gds.empty:
+                        fig.add_trace(go.Scatter(x=x_vals, y=gds, mode='lines+markers', name='Gula Darah Sewaktu'))
+                    if td_systolic is not None and not td_systolic.empty:
+                        fig.add_trace(go.Scatter(x=x_vals, y=td_systolic, mode='lines+markers', name='Tekanan Darah (Sistole)'))
+                    if lp is not None and not lp.empty:
+                        fig.add_trace(go.Scatter(x=x_vals, y=lp, mode='lines+markers', name='Lingkar Perut'))
+                    if chol is not None and not chol.empty:
+                        fig.add_trace(go.Scatter(x=x_vals, y=chol, mode='lines+markers', name='Cholesterol'))
+                    if asam is not None and not asam.empty:
+                        fig.add_trace(go.Scatter(x=x_vals, y=asam, mode='lines+markers', name='Asam Urat'))
+
+                    fig.update_layout(
+                        title='Grafik',
+                        xaxis_title='Tanggal Checkup',
+                        yaxis_title='Nilai',
+                        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+                        margin=dict(l=40, r=20, t=60, b=40),
+                        template='plotly_white'
+                    )
+                    grafik_chart_html = pio.to_html(fig, full_html=False, include_plotlyjs='cdn')
+        else:
+            try:
+                df = load_checkups()
+            except Exception:
+                df = pd.DataFrame()
+            if df is None or df.empty:
+                try:
+                    df = get_dashboard_checkup_data()
+                except Exception:
+                    df = pd.DataFrame()
+
+            date_col = None
+            if not df.empty and 'tanggal_checkup' in df.columns:
+                df['tanggal_checkup'] = pd.to_datetime(df['tanggal_checkup'], errors='coerce', dayfirst=True)
+                date_col = 'tanggal_checkup'
+            elif not df.empty and 'tanggal_MCU' in df.columns:
+                df['tanggal_MCU'] = pd.to_datetime(df['tanggal_MCU'], errors='coerce', dayfirst=True)
+                date_col = 'tanggal_MCU'
+
+            if date_col is not None:
+                df = df.dropna(subset=[date_col])
+                start_dt = pd.to_datetime(grafik_start_month + '-01', errors='coerce') if grafik_start_month else None
+                end_dt = pd.to_datetime(grafik_end_month + '-01', errors='coerce') if grafik_end_month else None
+                if pd.notnull(end_dt):
+                    end_dt = (end_dt + pd.offsets.MonthBegin(1)) - pd.Timedelta(days=1)
+                if pd.notnull(start_dt) and pd.notnull(end_dt):
+                    df = df[(df[date_col] >= start_dt) & (df[date_col] <= end_dt)]
+
+                numeric_cols = [
+                    'gula_darah_puasa', 'gula_darah_sewaktu',
+                    'cholesterol', 'asam_urat', 'bmi'
+                ]
+                for col in numeric_cols:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+                if not df.empty:
+                    grouped = df.groupby(date_col)[numeric_cols].mean().reset_index()
+
+                    fig = go.Figure()
+                    label_map = {
+                        'gula_darah_puasa': 'Gula Darah Puasa',
+                        'gula_darah_sewaktu': 'Gula Darah Sewaktu',
+                        'cholesterol': 'Cholesterol',
+                        'asam_urat': 'Asam Urat',
+                        'bmi': 'BMI',
+                    }
+                    for col in numeric_cols:
+                        if col in grouped.columns:
+                            fig.add_trace(go.Scatter(
+                                x=grouped[date_col],
+                                y=grouped[col],
+                                mode='lines+markers',
+                                name=label_map.get(col, col.replace('_', ' ').title())
+                            ))
+                    fig.update_layout(
+                        title='Rata-rata Parameter MCU Semua Karyawan',
+                        xaxis_title='Tanggal Checkup',
+                        yaxis_title='Nilai Pemeriksaan',
+                        template='plotly_white',
+                        height=500
+                    )
+                    grafik_chart_html = pio.to_html(fig, include_plotlyjs='cdn', full_html=False)
+    except Exception:
+        grafik_chart_html = None
+
+    return grafik_chart_html
+
+@require_http_methods(["GET"]) 
+def nurse_grafik_kesehatan(request):
+    # Nurse-only access
+    if not request.session.get("authenticated") or request.session.get("user_role") != "Tenaga Kesehatan":
+        return redirect("accounts:login")
+
+    # Employee selector (same as dashboard, but we will reuse Edit Data Checkup → Grafik logic when a UID is selected)
+    available_employees = []
+    try:
+        df_emps = get_employees()
+        if hasattr(df_emps, 'empty') and not df_emps.empty and 'uid' in df_emps.columns and 'nama' in df_emps.columns:
+            for _, row in df_emps.iterrows():
+                uid = str(row['uid']) if pd.notna(row['uid']) else ''
+                nama = str(row['nama']) if pd.notna(row['nama']) else f'UID {uid}'
+                if uid:
+                    available_employees.append({'uid': uid, 'nama': nama})
+    except Exception:
+        pass
+    available_employees = sorted(available_employees, key=lambda x: x['nama'].lower())
+
+    # Month range defaults (last 6 months)
+    now2 = pd.Timestamp.now()
+    default_end_month = now2.strftime('%Y-%m')
+    default_start_month = (now2 - pd.offsets.DateOffset(months=5)).strftime('%Y-%m')
+    grafik_start_month = request.GET.get('start_month', default_start_month)
+    grafik_end_month = request.GET.get('end_month', default_end_month)
+
+    uid = request.GET.get('uid', '')
+
+    grafik_chart_html = None
+    try:
+        # If a specific employee is selected, reuse the exact logic from Edit Data Checkup → Grafik
+        if uid and uid != 'all':
+            df_ts = get_medical_checkups_by_uid(uid) or pd.DataFrame()
+            if df_ts is not None and not df_ts.empty:
+                df_ts = df_ts.copy()
+                df_ts['tanggal_checkup'] = pd.to_datetime(df_ts['tanggal_checkup'], errors='coerce')
+                # Range boundaries
+                start_dt = pd.to_datetime(grafik_start_month + '-01', errors='coerce') if grafik_start_month else None
+                end_dt = pd.to_datetime(grafik_end_month + '-01', errors='coerce') if grafik_end_month else None
+                if pd.notnull(end_dt):
+                    end_dt = (end_dt + pd.offsets.MonthBegin(1)) - pd.Timedelta(days=1)
+                if pd.notnull(start_dt) and pd.notnull(end_dt):
+                    df_ts = df_ts[(df_ts['tanggal_checkup'] >= start_dt) & (df_ts['tanggal_checkup'] <= end_dt)]
+
+                df_ts = df_ts.sort_values('tanggal_checkup')
+                x_vals = df_ts['tanggal_checkup']
+                gdp = pd.to_numeric(df_ts.get('gula_darah_puasa'), errors='coerce')
+                gds = pd.to_numeric(df_ts.get('gula_darah_sewaktu'), errors='coerce')
+                lp = pd.to_numeric(df_ts.get('lingkar_perut'), errors='coerce')
+                chol = pd.to_numeric(df_ts.get('cholesterol'), errors='coerce')
+                asam = pd.to_numeric(df_ts.get('asam_urat'), errors='coerce')
+                def _parse_systolic(val):
+                    try:
+                        s = str(val)
+                        if '/' in s:
+                            return pd.to_numeric(s.split('/')[0], errors='coerce')
+                        return pd.to_numeric(val, errors='coerce')
+                    except Exception:
+                        return pd.NA
+                td_systolic = df_ts['tekanan_darah'].apply(_parse_systolic) if 'tekanan_darah' in df_ts.columns else pd.Series([], dtype='float64')
+
+                fig = go.Figure()
+                if not x_vals.empty:
+                    if gdp is not None and not gdp.empty:
+                        fig.add_trace(go.Scatter(x=x_vals, y=gdp, mode='lines+markers', name='Gula Darah Puasa'))
+                    if gds is not None and not gds.empty:
+                        fig.add_trace(go.Scatter(x=x_vals, y=gds, mode='lines+markers', name='Gula Darah Sewaktu'))
+                    if td_systolic is not None and not td_systolic.empty:
+                        fig.add_trace(go.Scatter(x=x_vals, y=td_systolic, mode='lines+markers', name='Tekanan Darah (Sistole)'))
+                    if lp is not None and not lp.empty:
+                        fig.add_trace(go.Scatter(x=x_vals, y=lp, mode='lines+markers', name='Lingkar Perut'))
+                    if chol is not None and not chol.empty:
+                        fig.add_trace(go.Scatter(x=x_vals, y=chol, mode='lines+markers', name='Cholesterol'))
+                    if asam is not None and not asam.empty:
+                        fig.add_trace(go.Scatter(x=x_vals, y=asam, mode='lines+markers', name='Asam Urat'))
+
+                    fig.update_layout(
+                        title='Grafik',
+                        xaxis_title='Tanggal Checkup',
+                        yaxis_title='Nilai',
+                        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+                        margin=dict(l=40, r=20, t=60, b=40),
+                        template='plotly_white'
+                    )
+                    grafik_chart_html = pio.to_html(fig, full_html=False, include_plotlyjs='cdn')
+        else:
+            # Mode: Semua Karyawan — aggregate by date using the same parameters as per-UID logic
+            try:
+                df = load_checkups()
+            except Exception:
+                df = pd.DataFrame()
+            if df is None or df.empty:
+                try:
+                    df = get_dashboard_checkup_data()
+                except Exception:
+                    df = pd.DataFrame()
+
+            # Prefer tanggal_checkup; fallback to tanggal_MCU
+            date_col = None
+            if not df.empty and 'tanggal_checkup' in df.columns:
+                df['tanggal_checkup'] = pd.to_datetime(df['tanggal_checkup'], errors='coerce', dayfirst=True)
+                date_col = 'tanggal_checkup'
+            elif not df.empty and 'tanggal_MCU' in df.columns:
+                df['tanggal_MCU'] = pd.to_datetime(df['tanggal_MCU'], errors='coerce', dayfirst=True)
+                date_col = 'tanggal_MCU'
+
+            if date_col is None:
+                grafik_chart_html = None
+            else:
+                # Drop invalid dates and filter by month range
+                df = df.dropna(subset=[date_col])
+                start_dt = pd.to_datetime(grafik_start_month + '-01', errors='coerce') if grafik_start_month else None
+                end_dt = pd.to_datetime(grafik_end_month + '-01', errors='coerce') if grafik_end_month else None
+                if pd.notnull(end_dt):
+                    end_dt = (end_dt + pd.offsets.MonthBegin(1)) - pd.Timedelta(days=1)
+                if pd.notnull(start_dt) and pd.notnull(end_dt):
+                    df = df[(df[date_col] >= start_dt) & (df[date_col] <= end_dt)]
+
+                # Convert relevant parameters to numeric
+                numeric_cols = [
+                    'gula_darah_puasa', 'gula_darah_sewaktu',
+                    'cholesterol', 'asam_urat', 'bmi'
+                ]
+                for col in numeric_cols:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+                if df.empty:
+                    grafik_chart_html = None
+                else:
+                    # Group by date and take mean to aggregate all employees
+                    grouped = df.groupby(date_col)[numeric_cols].mean().reset_index()
+
+                    # Build Plotly figure
+                    fig = go.Figure()
+                    label_map = {
+                        'gula_darah_puasa': 'Gula Darah Puasa',
+                        'gula_darah_sewaktu': 'Gula Darah Sewaktu',
+                        'cholesterol': 'Cholesterol',
+                        'asam_urat': 'Asam Urat',
+                        'bmi': 'BMI',
+                    }
+                    for col in numeric_cols:
+                        if col in grouped.columns:
+                            fig.add_trace(go.Scatter(
+                                x=grouped[date_col],
+                                y=grouped[col],
+                                mode='lines+markers',
+                                name=label_map.get(col, col.replace('_', ' ').title())
+                            ))
+                    fig.update_layout(
+                        title='Rata-rata Parameter MCU Semua Karyawan',
+                        xaxis_title='Tanggal Checkup',
+                        yaxis_title='Nilai Pemeriksaan',
+                        template='plotly_white',
+                        height=500
+                    )
+                    grafik_chart_html = pio.to_html(fig, include_plotlyjs='cdn', full_html=False)
+    except Exception:
+        grafik_chart_html = None
+
+    context = {
+        'grafik_subtab': 'grafik_kesehatan',
+        'grafik_start_month': grafik_start_month,
+        'grafik_end_month': grafik_end_month,
+        'available_employees': available_employees,
+        'default_start_month': default_start_month,
+        'default_end_month': default_end_month,
+        'grafik_chart_html': grafik_chart_html,
+    }
+    return render(request, 'nurse_dashboard/grafik/grafik_kesehatan.html', context)
+
+@require_http_methods(["GET"]) 
+def nurse_grafik_well_unwell(request):
+    if not request.session.get("authenticated") or request.session.get("user_role") != "Tenaga Kesehatan":
+        return redirect("accounts:login")
+    try:
+        base_df = get_dashboard_checkup_data()
+    except Exception:
+        base_df = pd.DataFrame()
+    all_lokasi = []
+    if base_df is not None and not base_df.empty and 'lokasi' in base_df.columns:
+        all_lokasi = sorted([str(x) for x in base_df['lokasi'].dropna().unique().tolist()])
+    context = {
+        'grafik_subtab': 'well_unwell',
+        'available_lokasi': all_lokasi,
+    }
+    return render(request, 'nurse_dashboard/grafik/well_unwell.html', context)
