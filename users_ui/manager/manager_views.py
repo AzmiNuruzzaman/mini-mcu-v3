@@ -3751,10 +3751,6 @@ def manage_karyawan_uid(request):
         'upload_history': upload_history,
         'manual_logs': manual_logs,
         'MEDIA_URL': settings.MEDIA_URL,
-        'total_karyawan': total_karyawan,
-        'total_well': total_well,
-        'total_unwell': total_unwell,
-        'latest_checkup_display': latest_checkup_display,
     }
 
     return render(request, "manager/data_management.html", context)
