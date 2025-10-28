@@ -1,9 +1,14 @@
 <div id="well-unwell-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4 {% if grafik_subtab != 'well_unwell' %}hidden{% endif %}">
   <h2 class="text-xl font-bold mb-3">Distribusi Well &amp; Unwell</h2>
 
+  {% with month_from=request.GET.month_from month_to=request.GET.month_to %}
   <div class="mb-4 flex items-center gap-2">
-    <label for="wu-month" class="font-medium">Bulan:</label>
-    <input type="month" id="wu-month" class="border px-2 py-1 rounded" value="{{ request.GET.month|default:'' }}"/>
+    <label for="wu-month-from" class="font-medium">From:</label>
+    <input type="month" id="wu-month-from" class="border px-2 py-1 rounded" value="{{ month_from|default:'' }}"/>
+    
+    <label for="wu-month-to" class="font-medium ml-2">To:</label>
+    <input type="month" id="wu-month-to" class="border px-2 py-1 rounded" value="{{ month_to|default:'' }}"/>
+  {% endwith %}
 
     <label for="wu-lokasi" class="font-medium ml-2">Lokasi Kerja:</label>
     <select id="wu-lokasi" class="border px-2 py-1 rounded">
@@ -20,7 +25,7 @@
     <button id="wu-refresh" class="ml-2 bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Terapkan</button>
   </div>
 
-  <div id="wellUnwellChart" class="w-full min-h-[320px]"></div>
+  <div id="wellUnwellChart" class="w-full h-[600px] p-5"></div>
 </div>
 
 <script>
@@ -29,24 +34,31 @@
   const container = document.getElementById('well-unwell-content');
   if (!container || container.classList.contains('hidden')) return;
 
-  const monthInput = document.getElementById('wu-month');
+  const monthFromInput = document.getElementById('wu-month-from');
+  const monthToInput = document.getElementById('wu-month-to');
   const lokasiSelect = document.getElementById('wu-lokasi');
   const refreshBtn = document.getElementById('wu-refresh');
   const chartDiv = document.getElementById('wellUnwellChart');
-  const endpoint = "{% url 'manager:well_unwell_summary_json' %}";
+  const endpoint = "{% url 'nurse:well_unwell_summary_json' %}";
 
-  // Default month to current if empty
-  if (monthInput && !monthInput.value) {
+  // Default month range to current month if empty
+  if (monthFromInput && !monthFromInput.value && !monthToInput.value) {
     const d = new Date();
     const m = String(d.getMonth()+1).padStart(2,'0');
-    monthInput.value = `${d.getFullYear()}-${m}`;
+    const currentMonth = `${d.getFullYear()}-${m}`;
+    monthFromInput.value = currentMonth;
+    monthToInput.value = currentMonth;
   }
 
   async function fetchData() {
     const params = new URLSearchParams();
-    const month = monthInput.value;
+    const monthFrom = monthFromInput.value;
+    const monthTo = monthToInput.value;
     const lokasi = lokasiSelect.value;
-    if (month) params.set('month', month);
+    
+    // Always include month range parameters, even if empty
+    params.set('month_from', monthFrom || '');
+    params.set('month_to', monthTo || '');
     if (lokasi) params.set('lokasi', lokasi);
 
     const url = `${endpoint}?${params.toString()}`;
@@ -64,32 +76,48 @@
   }
 
   function renderChart(data) {
-    const labels = (data && data.labels) || ['Well','Unwell'];
-    const values = (data && data.values) || [0,0];
+    // Transform the data into arrays for plotting
+    const months = data.map(d => d.month);
+    const wellCounts = data.map(d => d.well);
+    const unwellCounts = data.map(d => d.unwell);
 
-    const trace = {
-      x: labels,
-      y: values,
+    const wellTrace = {
+      x: months,
+      y: wellCounts,
+      name: 'Well',
       type: 'bar',
-      marker: {
-        color: labels.map(l => l === 'Well' ? '#28a745' : '#dc3545')
-      }
+      marker: { color: '#22c55e' },
+      hovertemplate: 'Bulan: %{x}<br>Status: Well<br>Total: %{y} karyawan<extra></extra>'
+    };
+
+    const unwellTrace = {
+      x: months,
+      y: unwellCounts,
+      name: 'Unwell',
+      type: 'bar',
+      marker: { color: '#ef4444' },
+      hovertemplate: 'Bulan: %{x}<br>Status: Unwell<br>Total: %{y} karyawan<extra></extra>'
     };
 
     const layout = {
-      title: 'Total Well vs Unwell',
-      xaxis: { title: 'Status' },
-      yaxis: { title: 'Jumlah', rangemode: 'tozero' },
-      margin: { t: 40, r: 20, b: 60, l: 50 },
-      height: 360
+      title: 'Well vs Unwell Over Time',
+      xaxis: { title: 'Periode (Bulan)' },
+      yaxis: { title: 'Jumlah Karyawan', rangemode: 'tozero' },
+      barmode: 'group',
+      plot_bgcolor: 'rgba(0,0,0,0)',
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      margin: { t: 60, r: 40, b: 60, l: 70 },
+      hoverlabel: { font: { size: 14 } },
+      transition: { duration: 400, easing: 'cubic-in-out' }
     };
 
-    Plotly.newPlot(chartDiv, [trace], layout, {responsive: true});
+    Plotly.newPlot(chartDiv, [wellTrace, unwellTrace], layout, { responsive: true });
   }
 
   function bindEvents() {
     if (refreshBtn) refreshBtn.addEventListener('click', fetchData);
-    if (monthInput) monthInput.addEventListener('change', fetchData);
+    if (monthFromInput) monthFromInput.addEventListener('change', fetchData);
+    if (monthToInput) monthToInput.addEventListener('change', fetchData);
     if (lokasiSelect) lokasiSelect.addEventListener('change', fetchData);
   }
 

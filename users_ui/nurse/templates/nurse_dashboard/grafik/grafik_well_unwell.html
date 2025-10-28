@@ -33,7 +33,7 @@
   const lokasiSelect = document.getElementById('wu-lokasi');
   const refreshBtn = document.getElementById('wu-refresh');
   const chartDiv = document.getElementById('wellUnwellChart');
-  const endpoint = "{% url 'manager:well_unwell_summary_json' %}";
+  const endpoint = "{% url 'nurse:well_unwell_summary_json' %}";
 
   // Default month to current if empty
   if (monthInput && !monthInput.value) {
@@ -46,7 +46,11 @@
     const params = new URLSearchParams();
     const month = monthInput.value;
     const lokasi = lokasiSelect.value;
-    if (month) params.set('month', month);
+    // Nurse endpoint expects a month range; use the same month for from/to
+    if (month) {
+      params.set('month_from', month);
+      params.set('month_to', month);
+    }
     if (lokasi) params.set('lokasi', lokasi);
 
     const url = `${endpoint}?${params.toString()}`;
@@ -64,27 +68,41 @@
   }
 
   function renderChart(data) {
-    const labels = (data && data.labels) || ['Well','Unwell'];
-    const values = (data && data.values) || [0,0];
+    // Expect nurse endpoint shape: [{ month: 'YYYY-MM', well: N, unwell: M }, ...]
+    const months = (data || []).map(d => d.month);
+    const wellCounts = (data || []).map(d => d.well);
+    const unwellCounts = (data || []).map(d => d.unwell);
 
-    const trace = {
-      x: labels,
-      y: values,
+    const wellTrace = {
+      x: months,
+      y: wellCounts,
+      name: 'Well',
       type: 'bar',
-      marker: {
-        color: labels.map(l => l === 'Well' ? '#28a745' : '#dc3545')
-      }
+      marker: { color: '#22c55e' },
+      hovertemplate: 'Bulan: %{x}<br>Status: Well<br>Total: %{y} karyawan<extra></extra>'
+    };
+
+    const unwellTrace = {
+      x: months,
+      y: unwellCounts,
+      name: 'Unwell',
+      type: 'bar',
+      marker: { color: '#ef4444' },
+      hovertemplate: 'Bulan: %{x}<br>Status: Unwell<br>Total: %{y} karyawan<extra></extra>'
     };
 
     const layout = {
-      title: 'Total Well vs Unwell',
-      xaxis: { title: 'Status' },
-      yaxis: { title: 'Jumlah', rangemode: 'tozero' },
-      margin: { t: 40, r: 20, b: 60, l: 50 },
-      height: 360
+      title: 'Well vs Unwell Over Time',
+      xaxis: { title: 'Periode (Bulan)' },
+      yaxis: { title: 'Jumlah Karyawan', rangemode: 'tozero' },
+      barmode: 'group',
+      margin: { t: 60, r: 40, b: 60, l: 70 },
+      height: 360,
+      plot_bgcolor: 'rgba(0,0,0,0)',
+      paper_bgcolor: 'rgba(0,0,0,0)'
     };
 
-    Plotly.newPlot(chartDiv, [trace], layout, {responsive: true});
+    Plotly.newPlot(chartDiv, [wellTrace, unwellTrace], layout, {responsive: true});
   }
 
   function bindEvents() {

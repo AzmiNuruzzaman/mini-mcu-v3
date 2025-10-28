@@ -75,74 +75,93 @@
             </div>
         </div>
 
-        <!-- Filter Form -->
-        <form method="get" class="mb-6 bg-gray-50 p-4 rounded-lg">
+        <!-- Filter Form (Refactored to compact card/grid layout) -->
+        <div class="bg-white border shadow-md rounded-lg mb-6 p-4">
+          <form method="get" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
             <input type="hidden" name="submenu" value="{{ active_submenu }}">
-            <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
-                <div class="md:col-span-2">
-                    <label for="nama_filter" class="block text-sm font-medium text-gray-700 mb-1">Nama</label>
-                    <input type="text" id="nama_filter" name="nama" value="{{ filters.nama }}"
-                           class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                           placeholder="Cari berdasarkan nama...">
-                </div>
-                <div>
-                    <label for="jabatan_filter" class="block text-sm font-medium text-gray-700 mb-1">Jabatan</label>
-                    <select id="jabatan_filter" name="jabatan"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
-                        <option value="">Semua Jabatan</option>
-                        {% for jabatan in available_jabatan %}
-                        <option value="{{ jabatan }}" {% if filters.jabatan == jabatan %}selected{% endif %}>
-                            {{ jabatan }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div>
-                    <label for="lokasi_filter" class="block text-sm font-medium text-gray-700 mb-1">Lokasi</label>
-                    <select id="lokasi_filter" name="lokasi"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
-                        <option value="">Semua Lokasi</option>
-                        {% for lokasi in available_lokasi %}
-                        <option value="{{ lokasi }}" {% if filters.lokasi == lokasi %}selected{% endif %}>
-                            {{ lokasi }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div>
-                    <label for="status_filter" class="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                    <select id="status_filter" name="status"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
-                        <option value="">Semua Status</option>
-                        {% for status in available_status %}
-                        <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>
-                            {{ status }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div>
-                    <label for="expiry_filter" class="block text-sm font-medium text-gray-700 mb-1">MCU Expiry</label>
-                    <select id="expiry_filter" name="expiry"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
-                        <option value="">Semua</option>
-                        <option value="expired" {% if filters.expiry == 'expired' %}selected{% endif %}>Expired</option>
-                        <option value="warning" {% if filters.expiry == 'warning' %}selected{% endif %}>Almost Expired (≤60 hari)</option>
-                    </select>
-                </div>
-                <!-- Date filters removed: always showing latest checkup data -->
+
+            <!-- Start Month -->
+            <div class="flex flex-col">
+              <label class="text-sm font-medium mb-1" for="start-month">Start Month</label>
+              <input type="month" name="start_month" id="start-month" value="{{ filters.start_month }}" class="border px-2 py-1 rounded">
             </div>
-            <div class="mt-4 flex justify-end">
-                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-                    Filter
-                </button>
-                {% if filters.nama or filters.jabatan or filters.lokasi or filters.status or filters.expiry %}
-                <a href="?submenu={{ active_submenu }}" class="ml-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
-                    Reset
-                </a>
+
+            <!-- End Month -->
+            <div class="flex flex-col">
+              <label class="text-sm font-medium mb-1" for="end-month">End Month</label>
+              <input type="month" name="end_month" id="end-month" value="{{ filters.end_month }}" class="border px-2 py-1 rounded">
+            </div>
+
+            <!-- Employee Selector -->
+            <div class="flex flex-col">
+              <label class="text-sm font-medium mb-1" for="uid">Karyawan</label>
+              <select name="uid" id="uid" class="border px-2 py-1 rounded">
+                <option value="all" {% if filters.uid == 'all' %}selected{% endif %}>Semua Karyawan</option>
+                {% for emp in available_employees %}
+                <option value="{{ emp.uid }}" {% if filters.uid == emp.uid %}selected{% endif %}>{{ emp.nama }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <!-- Status Selector -->
+            <div class="flex flex-col">
+              <label class="text-sm font-medium mb-1" for="status">Status</label>
+              <select name="status" id="status" class="border px-2 py-1 rounded">
+                <option value="">Semua Status</option>
+                {% for status in available_status %}
+                <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <!-- Nama -->
+            <div class="flex flex-col">
+              <label class="text-sm font-medium mb-1" for="nama">Nama</label>
+              <input type="text" id="nama" name="nama" value="{{ filters.nama }}" class="border px-2 py-1 rounded" placeholder="Cari berdasarkan nama...">
+            </div>
+
+            <!-- Jabatan -->
+            <div class="flex flex-col">
+              <label class="text-sm font-medium mb-1" for="jabatan">Jabatan</label>
+              <select id="jabatan" name="jabatan" class="border px-2 py-1 rounded">
+                <option value="">Semua Jabatan</option>
+                {% for jabatan in available_jabatan %}
+                <option value="{{ jabatan }}" {% if filters.jabatan == jabatan %}selected{% endif %}>{{ jabatan }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <!-- Lokasi -->
+            <div class="flex flex-col">
+              <label class="text-sm font-medium mb-1" for="lokasi">Lokasi</label>
+              <select id="lokasi" name="lokasi" class="border px-2 py-1 rounded">
+                <option value="">Semua Lokasi</option>
+                {% for lokasi in available_lokasi %}
+                <option value="{{ lokasi }}" {% if filters.lokasi == lokasi %}selected{% endif %}>{{ lokasi }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <!-- Expiry Warning -->
+            <div class="flex flex-col">
+              <label class="text-sm font-medium mb-1" for="expiry">Expiry Warning (≤60 hari)</label>
+              <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" id="expiry" name="expiry" value="warning" {% if filters.expiry %}checked{% endif %} class="h-4 w-4 text-blue-600 border-gray-300 rounded">
+                <span>Tampilkan yang mendekati expired</span>
+              </label>
+            </div>
+
+            <!-- Apply & Reset -->
+            <div class="flex items-end">
+              <div class="w-full flex gap-2">
+                <button type="submit" class="w-full bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Terapkan</button>
+                {% if filters.nama or filters.jabatan or filters.lokasi or filters.status or filters.expiry or filters.start_month or filters.end_month or filters.uid %}
+                <a href="?submenu={{ active_submenu }}" class="bg-gray-200 text-gray-700 px-3 py-1 rounded hover:bg-gray-300">Reset</a>
                 {% endif %}
+              </div>
             </div>
-        </form>
+          </form>
+        </div>
 
         <div class="overflow-x-auto">
             <table class="min-w-full bg-white">
@@ -248,7 +267,7 @@
         {% if total_pages > 1 %}
         <div class="fixed bottom-6 left-1/2 -translate-x-1/2 transform z-40 flex justify-center items-center gap-2 bg-white/90 backdrop-blur-sm rounded-full shadow-md px-4 py-2 border border-gray-200">
             {% if current_page > 1 %}
-            <a href="?submenu={{ active_submenu }}&page={{ current_page|add:'-1' }}{% if filters.nama %}&nama={{ filters.nama }}{% endif %}{% if filters.jabatan %}&jabatan={{ filters.jabatan }}{% endif %}{% if filters.lokasi %}&lokasi={{ filters.lokasi }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.expiry %}&expiry={{ filters.expiry }}{% endif %}"
+            <a href="?submenu={{ active_submenu }}&page={{ current_page|add:'-1' }}{% if filters.nama %}&nama={{ filters.nama }}{% endif %}{% if filters.jabatan %}&jabatan={{ filters.jabatan }}{% endif %}{% if filters.lokasi %}&lokasi={{ filters.lokasi }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.expiry %}&expiry={{ filters.expiry }}{% endif %}{% if filters.start_month %}&start_month={{ filters.start_month }}{% endif %}{% if filters.end_month %}&end_month={{ filters.end_month }}{% endif %}"
                class="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">
                 Sebelumnya
             </a>
@@ -259,7 +278,7 @@
             </span>
 
             {% if current_page < total_pages %}
-            <a href="?submenu={{ active_submenu }}&page={{ current_page|add:'1' }}{% if filters.nama %}&nama={{ filters.nama }}{% endif %}{% if filters.jabatan %}&jabatan={{ filters.jabatan }}{% endif %}{% if filters.lokasi %}&lokasi={{ filters.lokasi }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.expiry %}&expiry={{ filters.expiry }}{% endif %}"
+            <a href="?submenu={{ active_submenu }}&page={{ current_page|add:'1' }}{% if filters.nama %}&nama={{ filters.nama }}{% endif %}{% if filters.jabatan %}&jabatan={{ filters.jabatan }}{% endif %}{% if filters.lokasi %}&lokasi={{ filters.lokasi }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.expiry %}&expiry={{ filters.expiry }}{% endif %}{% if filters.start_month %}&start_month={{ filters.start_month }}{% endif %}{% if filters.end_month %}&end_month={{ filters.end_month }}{% endif %}"
                class="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">
                 Berikutnya
             </a>

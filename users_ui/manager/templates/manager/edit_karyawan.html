@@ -673,12 +673,12 @@
           document.addEventListener('DOMContentLoaded', function(){
             var grafContainer = document.querySelector('#grafik-content .plotly-graph-div');
             if (!grafContainer || typeof Plotly === 'undefined' || !Plotly.relayout) return;
-            var thresholds = {
-              'BMI': 30,
-              'Gula Darah Puasa': 120,
+            const thresholdValues = {
+              'Gula Darah Puasa': 126,
               'Gula Darah Sewaktu': 200,
-              'Cholesterol': 240,
-              'Asam Urat': 7
+              'Asam Urat': 7,
+              'Cholesterol': 200,
+              'BMI': 30
             };
             grafContainer.on('plotly_legendclick', function(ev){
               try {
@@ -686,12 +686,15 @@
                 var d = ev.data || (ev.fullData || []);
                 var name = (d && d[idx] && d[idx].name) ? d[idx].name : null;
                 if (!name) return true;
-                var thr = thresholds[name];
+                var thr = thresholdValues[name];
                 var shapes = [];
                 if (thr != null) {
                   shapes = [{ type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y', y0: thr, y1: thr, line: { color: 'rgba(255,0,0,0.35)', width: 2, dash: 'dash' } }];
                 }
-                Plotly.relayout(grafContainer, { shapes: shapes });
+                Plotly.relayout(grafContainer, { shapes: shapes, 'yaxis.showticklabels': true });
+                // Force immediate render to avoid needing manual resize
+                try { Plotly.redraw(grafContainer); } catch(e) {}
+                try { Plotly.Plots.resize(grafContainer); } catch(e) {}
               } catch(e) {}
               return true;
             });
@@ -699,10 +702,13 @@
               try {
                 var pt = ev.points && ev.points[0];
                 var name = pt && pt.data && pt.data.name;
-                var thr = thresholds[name];
+                var thr = thresholdValues[name];
                 if (thr == null) return;
                 var shape = { type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y', y0: thr, y1: thr, line: { color: 'rgba(255,0,0,0.35)', width: 2, dash: 'dash' } };
-                Plotly.relayout(grafContainer, { shapes: [shape] });
+                Plotly.relayout(grafContainer, { shapes: [shape], 'yaxis.showticklabels': true });
+                // Force immediate render to avoid needing manual resize
+                try { Plotly.redraw(grafContainer); } catch(e) {}
+                try { Plotly.Plots.resize(grafContainer); } catch(e) {}
               } catch(e) {}
             });
           });

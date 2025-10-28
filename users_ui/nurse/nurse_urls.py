@@ -10,7 +10,8 @@ urlpatterns = [
     path('', nurse_views.nurse_index, name='dashboard'),
     # Grafik Kesehatan uses nurse view that delegates to manager's backend logic; Well/Unwell continues to use manager's dashboard
     path('dashboard/grafik/kesehatan/', nurse_views.nurse_grafik_kesehatan, name='nurse_grafik_kesehatan'),
-    path('dashboard/grafik/well_unwell/', manager_views.dashboard, name='nurse_grafik_well_unwell'),
+    path('dashboard/grafik/well_unwell/', nurse_views.nurse_grafik_well_unwell, name='nurse_grafik_well_unwell'),
+    path('grafik/well_unwell/summary-json/', nurse_views.well_unwell_summary_json, name='well_unwell_summary_json'),
 
     # ---------------- Karyawan Detail / Edit ----------------
     path('karyawan/<str:uid>/', nurse_views.nurse_karyawan_detail, name='karyawan_detail'),

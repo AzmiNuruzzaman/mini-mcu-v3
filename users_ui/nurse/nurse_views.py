@@ -1,9 +1,11 @@
 # users_ui/nurse/nurse_views.py
 import io
 from django.shortcuts import render, redirect
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
+from django.db.models import Count, Q
+from django.db.models.functions import TruncMonth
 import pandas as pd
 from datetime import datetime
 import base64
@@ -40,6 +42,139 @@ import plotly.io as pio
 # -------------------------
 # Tab 1: Dashboard
 # -------------------------
+def _build_nurse_filtered_df(request):
+    """
+    Build the Nurse dashboard DataFrame applying filters:
+    - lokasi kerja
+    - well/unwell (status)
+    - expiry warning (≤60 days)
+    - month range (start_month/end_month) with default latest checkup per employee
+
+    Returns a DataFrame already de-duplicated per employee (uid) and ready for display.
+    """
+    # Base: latest checkup per employee
+    df_base = get_dashboard_checkup_data()
+
+    # Normalize status column if missing
+    try:
+        if df_base is not None and not df_base.empty and ('status' not in df_base.columns or df_base['status'].isna().any()):
+            df_base['status'] = df_base.apply(compute_status, axis=1)
+    except Exception:
+        pass
+
+    # Month range filters
+    start_month = request.GET.get('start_month')
+    end_month = request.GET.get('end_month')
+    if start_month and end_month:
+        try:
+            # Load historical checkups and filter by range
+            df_hist = load_checkups() or pd.DataFrame()
+            if df_hist is not None and not df_hist.empty:
+                df_hist['tanggal_checkup'] = pd.to_datetime(df_hist.get('tanggal_checkup'), errors='coerce')
+                start_dt = pd.to_datetime(f"{start_month}-01", errors='coerce')
+                end_dt = pd.to_datetime(f"{end_month}-01", errors='coerce')
+                # End-of-month inclusive: add 1 month then -1 day
+                if pd.notnull(end_dt):
+                    end_dt = (end_dt + pd.offsets.MonthBegin(1)) - pd.Timedelta(days=1)
+                # Filter within range
+                if pd.notnull(start_dt) and pd.notnull(end_dt):
+                    df_hist = df_hist[(df_hist['tanggal_checkup'] >= start_dt) & (df_hist['tanggal_checkup'] <= end_dt)]
+                # Pick latest checkup IN RANGE per employee
+                if not df_hist.empty and 'uid' in df_hist.columns:
+                    # Ensure uid is consistent type
+                    df_hist['uid'] = df_hist['uid'].astype(str)
+                    # Sort by date then take last per uid
+                    df_hist = df_hist.sort_values(['uid', 'tanggal_checkup'])
+                    latest_idx = df_hist.groupby('uid')['tanggal_checkup'].idxmax()
+                    df_latest_range = df_hist.loc[latest_idx].copy()
+                    # Recompute status for these rows if missing
+                    try:
+                        if 'status' not in df_latest_range.columns or df_latest_range['status'].isna().any():
+                            df_latest_range['status'] = df_latest_range.apply(compute_status, axis=1)
+                    except Exception:
+                        pass
+                    # Keep only employees that have checkups in range
+                    if df_base is None or df_base.empty:
+                        df_base = pd.DataFrame()
+                    # Ensure base has uid str
+                    if 'uid' in df_base.columns:
+                        df_base['uid'] = df_base['uid'].astype(str)
+                    # Align columns: update checkup-related fields from range DataFrame
+                    merge_cols = [
+                        'tanggal_checkup','tinggi','berat','lingkar_perut','bmi','umur',
+                        'gula_darah_puasa','gula_darah_sewaktu','cholesterol','asam_urat',
+                        'tekanan_darah','derajat_kesehatan','status'
+                    ]
+                    # Build mapping by uid
+                    range_map = df_latest_range.set_index('uid')[merge_cols]
+                    # Filter base to only uids present in range
+                    df_base = df_base[df_base['uid'].astype(str).isin(range_map.index)].copy()
+                    # Update/assign values from range
+                    for col in merge_cols:
+                        try:
+                            df_base[col] = df_base['uid'].astype(str).map(range_map[col])
+                        except Exception:
+                            pass
+        except Exception:
+            # If anything fails, fall back to latest per employee
+            pass
+
+    # Compute MCU expiry flags
+    try:
+        if df_base is not None and not df_base.empty and 'expired_MCU' in df_base.columns:
+            expired_dt = pd.to_datetime(df_base['expired_MCU'], format='%d/%m/%y', errors='coerce')
+            today = pd.Timestamp.today().normalize()
+            warn_deadline = today + pd.Timedelta(days=60)
+            df_base['mcu_is_expired'] = expired_dt.notna() & (expired_dt < today)
+            df_base['mcu_is_warning'] = expired_dt.notna() & (expired_dt >= today) & (expired_dt <= warn_deadline)
+        else:
+            df_base['mcu_is_expired'] = False
+            df_base['mcu_is_warning'] = False
+    except Exception:
+        df_base['mcu_is_expired'] = False
+        df_base['mcu_is_warning'] = False
+
+    # Apply combined filters
+    lokasi = request.GET.get('lokasi', '')
+    well_status = request.GET.get('status', '')  # 'Well' or 'Unwell'
+    expiry = request.GET.get('expiry', '')       # expects 'warning' if checkbox checked
+
+    if lokasi:
+        try:
+            df_base = df_base[df_base['lokasi'] == lokasi]
+        except Exception:
+            pass
+    if well_status:
+        try:
+            df_base = df_base[df_base['status'] == well_status]
+        except Exception:
+            pass
+    if expiry:
+        exp_val = str(expiry).lower()
+        if exp_val == 'warning':
+            df_base = df_base[df_base['mcu_is_warning']]
+        elif exp_val == 'expired':
+            df_base = df_base[df_base['mcu_is_expired']]
+
+    # Also support existing filters (nama, jabatan) for convenience
+    nama = request.GET.get('nama', '')
+    jabatan = request.GET.get('jabatan', '')
+    if nama:
+        try:
+            df_base = df_base[df_base['nama'].astype(str).str.contains(nama, case=False, na=False)]
+        except Exception:
+            pass
+    if jabatan:
+        try:
+            # Match clean lower-cased jabatan if available, else direct
+            if 'jabatan' in df_base.columns:
+                df_base = df_base[df_base['jabatan'].astype(str).str.strip().str.replace(r"\s+", " ", regex=True).str.lower() == jabatan.strip().lower()]
+        except Exception:
+            pass
+
+    return df_base if df_base is not None else pd.DataFrame()
+
+
 def nurse_index(request):
     # Check if user is logged in and is a nurse
     if not request.session.get("authenticated") or request.session.get("user_role") != "Tenaga Kesehatan":
@@ -181,8 +316,8 @@ def nurse_index(request):
     error_message = request.session.pop("error_message", None)
     warning_message = request.session.pop("warning_message", None)
 
-    # Get the dashboard DataFrame similar to manager
-    df = get_dashboard_checkup_data()
+    # Get the dashboard DataFrame with combined filters and month-range logic
+    df = _build_nurse_filtered_df(request)
 
     # Normalize 'jabatan' to remove duplicates caused by spacing/casing differences
     if not df.empty and "jabatan" in df.columns:
@@ -195,48 +330,35 @@ def nurse_index(request):
     # Get all available locations before filtering
     all_lokasi = sorted(df["lokasi"].dropna().unique().tolist()) if not df.empty and "lokasi" in df.columns else []
 
-    # Get filter parameters
+    # Get filter parameters (including month range)
     filters = {
         "nama": request.GET.get("nama", ""),
         "jabatan": request.GET.get("jabatan", ""),
         "lokasi": request.GET.get("lokasi", ""),
         "status": request.GET.get("status", ""),
         "expiry": request.GET.get("expiry", ""),
+        "start_month": request.GET.get("start_month", ""),
+        "end_month": request.GET.get("end_month", ""),
     }
 
-    # Apply filters
-    if filters["nama"]:
-        df = df[df["nama"].str.contains(filters["nama"], case=False, na=False)]
-    if filters["jabatan"]:
+    # Apply text/jabatan normalized filters on top (already applied in builder but keep UI normalization keys)
+    if filters["nama"] and "nama" in df.columns:
+        df = df[df["nama"].astype(str).str.contains(filters["nama"], case=False, na=False)]
+    if filters["jabatan"] and "jabatan_key" in df.columns:
         # Normalize filter to match jabatan_key
         filt_clean = " ".join(filters["jabatan"].split()).strip().lower()
-        df = df[df["jabatan_key"] == filt_clean]
-    if filters["lokasi"]:
-        df = df[df["lokasi"] == filters["lokasi"]]
-    if filters["status"]:
-        df = df[df["status"] == filters["status"]]
+        df = df[df.get("jabatan_key", pd.Series(dtype=str)) == filt_clean]
 
-    # Compute MCU expiry flags for styling (expired = red, within 60 days = yellow)
-    try:
-        if 'expired_MCU' in df.columns:
-            expired_dt = pd.to_datetime(df['expired_MCU'], format='%d/%m/%y', errors='coerce')
-            today = pd.Timestamp.today().normalize()
-            warn_deadline = today + pd.Timedelta(days=60)
-            df['mcu_is_expired'] = expired_dt.notna() & (expired_dt < today)
-            df['mcu_is_warning'] = expired_dt.notna() & (expired_dt >= today) & (expired_dt <= warn_deadline)
-        else:
-            df['mcu_is_expired'] = False
-            df['mcu_is_warning'] = False
-    except Exception:
+    # MCU flags already computed in builder; ensure columns exist
+    if 'mcu_is_expired' not in df.columns:
         df['mcu_is_expired'] = False
+    if 'mcu_is_warning' not in df.columns:
         df['mcu_is_warning'] = False
 
-    # Apply expiry filter if requested
+    # Expiry filter handled by builder; keep backward-compat additional synonyms
     if filters.get("expiry"):
         expiry_val = str(filters["expiry"]).lower()
-        if expiry_val == "expired":
-            df = df[df["mcu_is_expired"]]
-        elif expiry_val in ("warning", "almost", "almost_expired", "almost-expired"):
+        if expiry_val in ("almost", "almost_expired", "almost-expired"):
             df = df[df["mcu_is_warning"]]
 
     # Build available dropdown options from filtered/normalized data
@@ -420,6 +542,7 @@ def nurse_index(request):
         "total_pages": total_pages,
         "start_index": start_index,
         "filters": filters,
+        "current_filters": filters,
         "available_jabatan": available_jabatan,
         "available_lokasi": available_lokasi,
         "available_status": available_status,
@@ -952,25 +1075,26 @@ def nurse_karyawan_detail(request, uid):
                 fig = go.Figure()
                 if not x_vals.empty:
                     if gdp is not None and not gdp.empty:
-                        fig.add_trace(go.Scatter(x=x_vals, y=gdp, mode='lines+markers', name='Gula Darah Puasa'))
+                        fig.add_trace(go.Bar(x=x_vals, y=gdp, name='Gula Darah Puasa'))
                     if gds is not None and not gds.empty:
-                        fig.add_trace(go.Scatter(x=x_vals, y=gds, mode='lines+markers', name='Gula Darah Sewaktu'))
+                        fig.add_trace(go.Bar(x=x_vals, y=gds, name='Gula Darah Sewaktu'))
                     if td_systolic is not None and not td_systolic.empty:
-                        fig.add_trace(go.Scatter(x=x_vals, y=td_systolic, mode='lines+markers', name='Tekanan Darah (Sistole)'))
+                        fig.add_trace(go.Bar(x=x_vals, y=td_systolic, name='Tekanan Darah (Sistole)'))
                     if lp is not None and not lp.empty:
-                        fig.add_trace(go.Scatter(x=x_vals, y=lp, mode='lines+markers', name='Lingkar Perut'))
+                        fig.add_trace(go.Bar(x=x_vals, y=lp, name='Lingkar Perut'))
                     if chol is not None and not chol.empty:
-                        fig.add_trace(go.Scatter(x=x_vals, y=chol, mode='lines+markers', name='Cholesterol'))
+                        fig.add_trace(go.Bar(x=x_vals, y=chol, name='Cholesterol'))
                     if asam is not None and not asam.empty:
-                        fig.add_trace(go.Scatter(x=x_vals, y=asam, mode='lines+markers', name='Asam Urat'))
+                        fig.add_trace(go.Bar(x=x_vals, y=asam, name='Asam Urat'))
 
                     fig.update_layout(
                         title='Grafik',
                         xaxis_title='Tanggal Checkup',
-                        yaxis_title='Nilai',
+                        yaxis=dict(title='Nilai', showticklabels=True),
                         legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
                         margin=dict(l=40, r=20, t=60, b=40),
-                        template='plotly_white'
+                        template='plotly_white',
+                        barmode='group'
                     )
                     grafik_chart_html = pio.to_html(fig, full_html=False, include_plotlyjs='cdn')
         except Exception:
@@ -1095,7 +1219,8 @@ def nurse_export_checkup_data(request):
     if not request.session.get("authenticated") or request.session.get("user_role") != "Tenaga Kesehatan":
         return redirect("accounts:login")
     try:
-        df = get_dashboard_checkup_data()
+        # Reflect current filtered state (lokasi, status, expiry warning, month range)
+        df = _build_nurse_filtered_df(request)
         if df is None or df.empty:
             request.session["warning_message"] = "belum ada check up data, silahkan unggah terlebih dahulu"
             return redirect(reverse("nurse:upload_export") + "?submenu=export_data")
@@ -1115,7 +1240,8 @@ def nurse_export_checkup_data_pdf(request):
     if not request.session.get("authenticated") or request.session.get("user_role") != "Tenaga Kesehatan":
         return redirect("accounts:login")
     try:
-        df = get_dashboard_checkup_data()
+        # Reflect current filtered state (lokasi, status, expiry warning, month range)
+        df = _build_nurse_filtered_df(request)
         if df is None or df.empty:
             request.session["warning_message"] = "belum ada check up data, silahkan unggah terlebih dahulu"
             return redirect(reverse("nurse:upload_export") + "?submenu=export_data")
@@ -1776,6 +1902,9 @@ def nurse_grafik_kesehatan_logic(request):
     default_start_month = (now2 - pd.offsets.DateOffset(months=5)).strftime('%Y-%m')
     grafik_start_month = request.GET.get('start_month', default_start_month)
     grafik_end_month = request.GET.get('end_month', default_end_month)
+    lokasi_filter = request.GET.get('lokasi', '').strip()
+    well_status = request.GET.get('status', '').strip()
+    expiry_filter = request.GET.get('expiry', '').strip().lower()
 
     grafik_chart_html = None
     try:
@@ -1790,6 +1919,28 @@ def nurse_grafik_kesehatan_logic(request):
                     end_dt = (end_dt + pd.offsets.MonthBegin(1)) - pd.Timedelta(days=1)
                 if pd.notnull(start_dt) and pd.notnull(end_dt):
                     df_ts = df_ts[(df_ts['tanggal_checkup'] >= start_dt) & (df_ts['tanggal_checkup'] <= end_dt)]
+
+                # Apply optional filters
+                try:
+                    if 'status' not in df_ts.columns or df_ts['status'].isna().any():
+                        df_ts['status'] = df_ts.apply(compute_status, axis=1)
+                except Exception:
+                    pass
+                if lokasi_filter and 'lokasi' in df_ts.columns:
+                    df_ts = df_ts[df_ts['lokasi'].astype(str) == lokasi_filter]
+                if well_status:
+                    df_ts = df_ts[df_ts['status'].astype(str) == well_status]
+                if expiry_filter and 'expired_MCU' in df_ts.columns:
+                    try:
+                        expired_dt = pd.to_datetime(df_ts['expired_MCU'], format='%d/%m/%y', errors='coerce')
+                        today = pd.Timestamp.today().normalize()
+                        warn_deadline = today + pd.Timedelta(days=60)
+                        if expiry_filter == 'warning':
+                            df_ts = df_ts[expired_dt.notna() & (expired_dt >= today) & (expired_dt <= warn_deadline)]
+                        elif expiry_filter == 'expired':
+                            df_ts = df_ts[expired_dt.notna() & (expired_dt < today)]
+                    except Exception:
+                        pass
 
                 df_ts = df_ts.sort_values('tanggal_checkup')
                 x_vals = df_ts['tanggal_checkup']
@@ -1811,25 +1962,27 @@ def nurse_grafik_kesehatan_logic(request):
                 fig = go.Figure()
                 if not x_vals.empty:
                     if gdp is not None and not gdp.empty:
-                        fig.add_trace(go.Scatter(x=x_vals, y=gdp, mode='lines+markers', name='Gula Darah Puasa'))
+                        fig.add_trace(go.Bar(x=x_vals, y=gdp, name='Gula Darah Puasa'))
                     if gds is not None and not gds.empty:
-                        fig.add_trace(go.Scatter(x=x_vals, y=gds, mode='lines+markers', name='Gula Darah Sewaktu'))
+                        fig.add_trace(go.Bar(x=x_vals, y=gds, name='Gula Darah Sewaktu'))
                     if td_systolic is not None and not td_systolic.empty:
-                        fig.add_trace(go.Scatter(x=x_vals, y=td_systolic, mode='lines+markers', name='Tekanan Darah (Sistole)'))
+                        fig.add_trace(go.Bar(x=x_vals, y=td_systolic, name='Tekanan Darah (Sistole)'))
                     if lp is not None and not lp.empty:
-                        fig.add_trace(go.Scatter(x=x_vals, y=lp, mode='lines+markers', name='Lingkar Perut'))
+                        fig.add_trace(go.Bar(x=x_vals, y=lp, name='Lingkar Perut'))
                     if chol is not None and not chol.empty:
-                        fig.add_trace(go.Scatter(x=x_vals, y=chol, mode='lines+markers', name='Cholesterol'))
+                        fig.add_trace(go.Bar(x=x_vals, y=chol, name='Cholesterol'))
                     if asam is not None and not asam.empty:
-                        fig.add_trace(go.Scatter(x=x_vals, y=asam, mode='lines+markers', name='Asam Urat'))
+                        fig.add_trace(go.Bar(x=x_vals, y=asam, name='Asam Urat'))
 
                     fig.update_layout(
-                        title='Grafik',
+                        title='Grafik Riwayat Medical Checkup',
                         xaxis_title='Tanggal Checkup',
-                        yaxis_title='Nilai',
+                        yaxis=dict(title='Nilai', showticklabels=True),
                         legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
                         margin=dict(l=40, r=20, t=60, b=40),
-                        template='plotly_white'
+                        template='plotly_white',
+                        height=600,
+                        barmode='group'
                     )
                     grafik_chart_html = pio.to_html(fig, full_html=False, include_plotlyjs='cdn')
         else:
@@ -1860,6 +2013,28 @@ def nurse_grafik_kesehatan_logic(request):
                 if pd.notnull(start_dt) and pd.notnull(end_dt):
                     df = df[(df[date_col] >= start_dt) & (df[date_col] <= end_dt)]
 
+                # Ensure status exists then apply filters
+                try:
+                    if 'status' not in df.columns or df['status'].isna().any():
+                        df['status'] = df.apply(compute_status, axis=1)
+                except Exception:
+                    pass
+                if lokasi_filter and 'lokasi' in df.columns:
+                    df = df[df['lokasi'].astype(str) == lokasi_filter]
+                if well_status:
+                    df = df[df['status'].astype(str) == well_status]
+                if expiry_filter and 'expired_MCU' in df.columns:
+                    try:
+                        expired_dt = pd.to_datetime(df['expired_MCU'], format='%d/%m/%y', errors='coerce')
+                        today = pd.Timestamp.today().normalize()
+                        warn_deadline = today + pd.Timedelta(days=60)
+                        if expiry_filter == 'warning':
+                            df = df[expired_dt.notna() & (expired_dt >= today) & (expired_dt <= warn_deadline)]
+                        elif expiry_filter == 'expired':
+                            df = df[expired_dt.notna() & (expired_dt < today)]
+                    except Exception:
+                        pass
+
                 numeric_cols = [
                     'gula_darah_puasa', 'gula_darah_sewaktu',
                     'cholesterol', 'asam_urat', 'bmi'
@@ -1881,24 +2056,94 @@ def nurse_grafik_kesehatan_logic(request):
                     }
                     for col in numeric_cols:
                         if col in grouped.columns:
-                            fig.add_trace(go.Scatter(
+                            fig.add_trace(go.Bar(
                                 x=grouped[date_col],
                                 y=grouped[col],
-                                mode='lines+markers',
                                 name=label_map.get(col, col.replace('_', ' ').title())
                             ))
                     fig.update_layout(
                         title='Rata-rata Parameter MCU Semua Karyawan',
                         xaxis_title='Tanggal Checkup',
-                        yaxis_title='Nilai Pemeriksaan',
+                        yaxis=dict(title='Nilai Pemeriksaan', showticklabels=True),
                         template='plotly_white',
-                        height=500
+                        margin=dict(l=80, r=40, t=60, b=40),
+                        height=600,
+                        barmode='group'
                     )
                     grafik_chart_html = pio.to_html(fig, include_plotlyjs='cdn', full_html=False)
     except Exception:
         grafik_chart_html = None
 
     return grafik_chart_html
+
+@require_http_methods(["GET"]) 
+def well_unwell_summary_json(request):
+    """
+    Returns identical JSON data structure as manager's version:
+    [
+        {"month": "2025-09", "well": 12, "unwell": 3},
+        {"month": "2025-10", "well": 15, "unwell": 5}
+    ]
+    """
+    try:
+        month_from = request.GET.get("month_from")
+        month_to = request.GET.get("month_to")
+
+        from core.core_models import Checkup
+        qs = Checkup.objects.all()
+
+        # Use the same date field and status values as the manager version
+        start_date = datetime.strptime(month_from, "%Y-%m").date() if month_from else None
+        end_date = datetime.strptime(month_to, "%Y-%m").date() if month_to else None
+
+        if start_date and end_date:
+            qs = qs.filter(tanggal_checkup__year__gte=start_date.year, tanggal_checkup__month__gte=start_date.month)
+            qs = qs.filter(tanggal_checkup__year__lte=end_date.year, tanggal_checkup__month__lte=end_date.month)
+        elif start_date:
+            qs = qs.filter(tanggal_checkup__year=start_date.year, tanggal_checkup__month=start_date.month)
+
+        # Aggregate counts by month using health metric thresholds
+        data = (
+            qs.annotate(month=TruncMonth("tanggal_checkup"))
+            .values("month")
+            .annotate(
+                well=Count(
+                    "checkup_id",
+                    filter=Q(
+                        Q(gula_darah_puasa__lte=120) | Q(gula_darah_puasa__isnull=True),
+                        Q(gula_darah_sewaktu__lte=200) | Q(gula_darah_sewaktu__isnull=True),
+                        Q(cholesterol__lte=240) | Q(cholesterol__isnull=True),
+                        Q(asam_urat__lte=7) | Q(asam_urat__isnull=True),
+                        Q(bmi__lt=30) | Q(bmi__isnull=True),
+                    )
+                ),
+                unwell=Count(
+                    "checkup_id",
+                    filter=Q(
+                        Q(gula_darah_puasa__gt=120) |
+                        Q(gula_darah_sewaktu__gt=200) |
+                        Q(cholesterol__gt=240) |
+                        Q(asam_urat__gt=7) |
+                        Q(bmi__gte=30)
+                    )
+                ),
+            )
+            .order_by("month")
+        )
+
+        result = [
+            {
+                "month": item["month"].strftime("%Y-%m"),
+                "well": item["well"],
+                "unwell": item["unwell"],
+            }
+            for item in data
+        ]
+
+        return JsonResponse(result, safe=False)
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
 
 @require_http_methods(["GET"]) 
 def nurse_grafik_kesehatan(request):
@@ -1928,6 +2173,9 @@ def nurse_grafik_kesehatan(request):
     grafik_end_month = request.GET.get('end_month', default_end_month)
 
     uid = request.GET.get('uid', '')
+    lokasi_filter = request.GET.get('lokasi', '').strip()
+    well_status = request.GET.get('status', '').strip()  # 'Well' or 'Unwell'
+    expiry_filter = request.GET.get('expiry', '').strip().lower()  # 'warning' (<=60 hari) or 'expired'
 
     grafik_chart_html = None
     try:
@@ -1944,6 +2192,30 @@ def nurse_grafik_kesehatan(request):
                     end_dt = (end_dt + pd.offsets.MonthBegin(1)) - pd.Timedelta(days=1)
                 if pd.notnull(start_dt) and pd.notnull(end_dt):
                     df_ts = df_ts[(df_ts['tanggal_checkup'] >= start_dt) & (df_ts['tanggal_checkup'] <= end_dt)]
+
+                # Apply optional lokasi/status/expiry filters for per-UID charts as well
+                try:
+                    if 'status' not in df_ts.columns or df_ts['status'].isna().any():
+                        df_ts['status'] = df_ts.apply(compute_status, axis=1)
+                except Exception:
+                    pass
+                if lokasi_filter and 'lokasi' in df_ts.columns:
+                    df_ts = df_ts[df_ts['lokasi'].astype(str) == lokasi_filter]
+                if well_status:
+                    df_ts = df_ts[df_ts['status'].astype(str) == well_status]
+                if expiry_filter and 'expired_MCU' in df_ts.columns:
+                    try:
+                        expired_dt = pd.to_datetime(df_ts['expired_MCU'], format='%d/%m/%y', errors='coerce')
+                        today = pd.Timestamp.today().normalize()
+                        warn_deadline = today + pd.Timedelta(days=60)
+                        if expiry_filter == 'warning':
+                            mask = expired_dt.notna() & (expired_dt >= today) & (expired_dt <= warn_deadline)
+                            df_ts = df_ts[mask]
+                        elif expiry_filter == 'expired':
+                            mask = expired_dt.notna() & (expired_dt < today)
+                            df_ts = df_ts[mask]
+                    except Exception:
+                        pass
 
                 df_ts = df_ts.sort_values('tanggal_checkup')
                 x_vals = df_ts['tanggal_checkup']
@@ -1983,7 +2255,8 @@ def nurse_grafik_kesehatan(request):
                         yaxis_title='Nilai',
                         legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
                         margin=dict(l=40, r=20, t=60, b=40),
-                        template='plotly_white'
+                        template='plotly_white',
+                        height=600
                     )
                     grafik_chart_html = pio.to_html(fig, full_html=False, include_plotlyjs='cdn')
         else:
@@ -2018,6 +2291,30 @@ def nurse_grafik_kesehatan(request):
                     end_dt = (end_dt + pd.offsets.MonthBegin(1)) - pd.Timedelta(days=1)
                 if pd.notnull(start_dt) and pd.notnull(end_dt):
                     df = df[(df[date_col] >= start_dt) & (df[date_col] <= end_dt)]
+
+                # Ensure status column exists for well/unwell filter
+                try:
+                    if 'status' not in df.columns or df['status'].isna().any():
+                        df['status'] = df.apply(compute_status, axis=1)
+                except Exception:
+                    pass
+
+                # Apply optional filters: lokasi, well/unwell, expiry warning
+                if lokasi_filter and 'lokasi' in df.columns:
+                    df = df[df['lokasi'].astype(str) == lokasi_filter]
+                if well_status:
+                    df = df[df['status'].astype(str) == well_status]
+                if expiry_filter and 'expired_MCU' in df.columns:
+                    try:
+                        expired_dt = pd.to_datetime(df['expired_MCU'], format='%d/%m/%y', errors='coerce')
+                        today = pd.Timestamp.today().normalize()
+                        warn_deadline = today + pd.Timedelta(days=60)
+                        if expiry_filter == 'warning':
+                            df = df[expired_dt.notna() & (expired_dt >= today) & (expired_dt <= warn_deadline)]
+                        elif expiry_filter == 'expired':
+                            df = df[expired_dt.notna() & (expired_dt < today)]
+                    except Exception:
+                        pass
 
                 # Convert relevant parameters to numeric
                 numeric_cols = [
@@ -2056,11 +2353,20 @@ def nurse_grafik_kesehatan(request):
                         xaxis_title='Tanggal Checkup',
                         yaxis_title='Nilai Pemeriksaan',
                         template='plotly_white',
-                        height=500
+                        height=600
                     )
                     grafik_chart_html = pio.to_html(fig, include_plotlyjs='cdn', full_html=False)
     except Exception:
         grafik_chart_html = None
+
+    # Build lokasi options for filter dropdown
+    available_lokasi = []
+    try:
+        base_df = get_dashboard_checkup_data()
+        if base_df is not None and not base_df.empty and 'lokasi' in base_df.columns:
+            available_lokasi = sorted([str(x) for x in base_df['lokasi'].dropna().unique().tolist()])
+    except Exception:
+        available_lokasi = []
 
     context = {
         'grafik_subtab': 'grafik_kesehatan',
@@ -2069,6 +2375,8 @@ def nurse_grafik_kesehatan(request):
         'available_employees': available_employees,
         'default_start_month': default_start_month,
         'default_end_month': default_end_month,
+        'available_lokasi': available_lokasi,
+        'available_status': ['Well', 'Unwell'],
         'grafik_chart_html': grafik_chart_html,
     }
     return render(request, 'nurse_dashboard/grafik/grafik_kesehatan.html', context)

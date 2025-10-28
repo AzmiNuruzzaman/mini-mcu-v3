@@ -200,8 +200,77 @@ def dashboard(request):
             unwell_count = int((latest_per_uid_range['status'] == 'Unwell').sum()) if not latest_per_uid_range.empty else 0
             return JsonResponse({'mode':'aggregate','months':months_sorted,'well':well_counts,'unwell':unwell_counts,'summary':{'total_employees':total_employees,'well_count':well_count,'unwell_count':unwell_count}})
 
-    # Get the DataFrame
-    df = get_dashboard_checkup_data()
+    # Get the default dashboard dataset (latest checkup per employee)
+    df_latest = get_dashboard_checkup_data()
+
+    # Month range filter for Data Karyawan (table & stats)
+    start_month = request.GET.get('start_month', '').strip()
+    end_month = request.GET.get('end_month', '').strip()
+    df = df_latest.copy()
+    if start_month and end_month:
+        try:
+            # Load full historical checkups
+            hist = load_checkups()
+        except Exception:
+            hist = None
+        try:
+            import pandas as _pd
+            if hist is not None and hasattr(hist, 'empty') and not hist.empty:
+                # Parse dates
+                if 'tanggal_checkup' in hist.columns:
+                    hist['tanggal_checkup'] = _pd.to_datetime(hist['tanggal_checkup'], errors='coerce', dayfirst=True)
+                # Compute status if missing
+                try:
+                    if 'status' not in hist.columns or hist['status'].isna().any():
+                        hist['status'] = hist.apply(compute_status, axis=1)
+                except Exception:
+                    hist['status'] = hist.get('status', '')
+
+                # Build date range
+                start_dt = _pd.to_datetime(start_month + '-01', errors='coerce')
+                end_dt = _pd.to_datetime(end_month + '-01', errors='coerce')
+                # Inclusive to end of month
+                if _pd.notnull(end_dt):
+                    end_dt_end = (end_dt + _pd.offsets.MonthBegin(1)) - _pd.Timedelta(days=1)
+                else:
+                    end_dt_end = end_dt
+
+                # Filter within range
+                if _pd.notnull(start_dt):
+                    hist = hist[hist['tanggal_checkup'] >= start_dt]
+                if _pd.notnull(end_dt_end):
+                    hist = hist[hist['tanggal_checkup'] <= end_dt_end]
+
+                # Latest checkup per uid within range
+                if not hist.empty and 'uid' in hist.columns:
+                    hist = hist.sort_values(by=['uid', 'tanggal_checkup'])
+                    latest_in_range = hist.groupby('uid').tail(1).set_index('uid')
+                    # Columns to overwrite from historical latest
+                    check_cols = [
+                        'tanggal_checkup','tinggi','berat','lingkar_perut','bmi','umur',
+                        'gula_darah_puasa','gula_darah_sewaktu','cholesterol','asam_urat',
+                        'tekanan_darah','derajat_kesehatan','status','tanggal_MCU','expired_MCU','bmi_category'
+                    ]
+                    for col in check_cols:
+                        if col not in df.columns:
+                            df[col] = None
+                    # Blank out existing checkup-related fields (so only range data shows)
+                    df[check_cols] = None
+                    # Apply latest-in-range values per uid
+                    for uid, row in latest_in_range.iterrows():
+                        if 'uid' not in df.columns:
+                            continue
+                        # Find indices of this uid in df
+                        idxs = df.index[df['uid'].astype(str) == str(uid)].tolist()
+                        if not idxs:
+                            continue
+                        for idx in idxs:
+                            for col in check_cols:
+                                if col in latest_in_range.columns:
+                                    df.at[idx, col] = row.get(col, None)
+        except Exception:
+            # If anything goes wrong, df remains as latest
+            pass
 
     # Ensure expected columns exist to avoid KeyError after backup restores
     for col in ['lokasi', 'status', 'nama', 'jabatan']:
@@ -217,7 +286,11 @@ def dashboard(request):
         df['jabatan_key'] = ''
     
     # Get all available locations before filtering (exclude empty values)
-    all_lokasi = sorted([loc for loc in df['lokasi'].dropna().unique().tolist() if str(loc).strip()])
+    try:
+        emps_df = get_employees()
+        all_lokasi = sorted([loc for loc in emps_df['lokasi'].dropna().unique().tolist() if str(loc).strip()]) if hasattr(emps_df, 'empty') and not emps_df.empty else []
+    except Exception:
+        all_lokasi = sorted([loc for loc in df['lokasi'].dropna().unique().tolist() if str(loc).strip()])
     
     # Make an unfiltered copy for card totals (keep cards constant when filters change)
     df_all = df.copy()
@@ -227,7 +300,10 @@ def dashboard(request):
         'nama': request.GET.get('nama', ''),
         'jabatan': request.GET.get('jabatan', ''),
         'lokasi': request.GET.get('lokasi', ''),  # Single location selection
-        'status': request.GET.get('status', ''),  # New status filter
+        'status': request.GET.get('status', ''),  # Well/Unwell
+        'expiry': request.GET.get('expiry', ''),  # Expiry warning toggle (≤60 hari)
+        'start_month': start_month,
+        'end_month': end_month,
     }
     
     # Apply filters
@@ -241,6 +317,27 @@ def dashboard(request):
         df = df[df['lokasi'] == filters['lokasi']]
     if filters['status']:  # Filter by Well/Unwell status
         df = df[df['status'] == filters['status']]
+    # Compute MCU expiry flags for styling and filtering
+    try:
+        if 'expired_MCU' in df.columns:
+            expired_dt = pd.to_datetime(df['expired_MCU'], format='%d/%m/%y', errors='coerce')
+            today = pd.Timestamp.today().normalize()
+            warn_deadline = today + pd.Timedelta(days=60)
+            df['mcu_is_expired'] = expired_dt.notna() & (expired_dt < today)
+            df['mcu_is_warning'] = expired_dt.notna() & (expired_dt >= today) & (expired_dt <= warn_deadline)
+        else:
+            df['mcu_is_expired'] = False
+            df['mcu_is_warning'] = False
+    except Exception:
+        df['mcu_is_expired'] = False
+        df['mcu_is_warning'] = False
+    # Apply expiry warning filter (checkbox toggles only warnings)
+    if filters.get('expiry'):
+        val = str(filters['expiry']).lower()
+        if val == 'expired':
+            df = df[df['mcu_is_expired']]
+        else:
+            df = df[df['mcu_is_warning']]
     
     # Get unique values for dropdowns from filtered data
     # Build a mapping of normalized key -> cleaned display value to dedupe case/spacing
@@ -255,9 +352,10 @@ def dashboard(request):
     # Status options are fixed
     available_status = ['Well', 'Unwell']
     
-    # Calculate Well/Unwell counts from unfiltered data
-    total_well = int((df_all['status'] == 'Well').sum()) if not df_all.empty else 0
-    total_unwell = int((df_all['status'] == 'Unwell').sum()) if not df_all.empty else 0
+    # Calculate Well/Unwell counts from filtered data (only rows with a checkup/status)
+    total_karyawan = int(df_all['uid'].nunique()) if not df_all.empty else 0
+    total_well = int((df['status'] == 'Well').sum()) if not df.empty else 0
+    total_unwell = int((df['status'] == 'Unwell').sum()) if not df.empty else 0
     
     # Pagination
     items_per_page = 10
@@ -288,6 +386,9 @@ def dashboard(request):
 
     # Legacy grafik server-rendered code removed. Client-side Plotly fetch + render is now used via JSON API.
     
+    # Initialize chart placeholders
+    checkup_dates = []
+    checkup_counts = []
     # Department counts for donut/bar (existing)
     dept_names = []
     dept_counts = []
@@ -311,7 +412,10 @@ def dashboard(request):
             filename = latest.get('filename', '')
             inserted = int(latest.get('inserted', 0))
             skipped = int(latest.get('skipped_count', 0))
-            if latest_check_date_disp:
+            if start_month and end_month:
+                # Show selected range
+                latest_checkup_display = f"Range {start_month} s/d {end_month} • {filename} • Inserted: {inserted} • Skipped: {skipped}"
+            elif latest_check_date_disp:
                 latest_checkup_display = f"{latest_check_date_disp} • {filename} • Inserted: {inserted} • Skipped: {skipped}"
             else:
                 latest_checkup_display = f"{ts_disp} • {filename} • Inserted: {inserted} • Skipped: {skipped}"
@@ -452,8 +556,24 @@ def dashboard(request):
             for label, colname in param_map:
                 if colname in df_plot.columns:
                     y_vals = df_plot[colname].apply(to_float_safe).tolist()
-                    fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines+markers', name=label))
-            fig.update_layout(title='Grafik Kesehatan', xaxis_title='Tanggal', yaxis_title='Nilai', legend_title_text='Parameter')
+                    # Convert to column (bar) chart
+                    fig.add_trace(go.Bar(x=x_vals, y=y_vals, name=label))
+            fig.update_layout(
+                title='Grafik Kesehatan',
+                xaxis_title='Tanggal',
+                yaxis=dict(
+                    title='Nilai',
+                    showticklabels=True,
+                    automargin=True,
+                    autorange=True,
+                    tickmode='auto'
+                ),
+                legend_title_text='Parameter',
+                barmode='group',
+                margin=dict(l=80, r=40, t=60, b=40),
+                height=600,
+                template='plotly_white'
+            )
             grafik_chart_html = pio.to_html(fig, include_plotlyjs=False, full_html=False)
             context['grafik_chart_html'] = grafik_chart_html
         except Exception:
@@ -1778,27 +1898,29 @@ def employee_profile(request, uid):
             fig = go.Figure()
             if not x_vals.empty:
                 if gdp is not None and not gdp.empty:
-                    fig.add_trace(go.Scatter(x=x_vals, y=gdp, mode='lines+markers', name='Gula Darah Puasa'))
+                    fig.add_trace(go.Bar(x=x_vals, y=gdp, name='Gula Darah Puasa'))
                 if gds is not None and not gds.empty:
-                    fig.add_trace(go.Scatter(x=x_vals, y=gds, mode='lines+markers', name='Gula Darah Sewaktu'))
+                    fig.add_trace(go.Bar(x=x_vals, y=gds, name='Gula Darah Sewaktu'))
                 if td_systolic is not None and not td_systolic.empty:
-                    fig.add_trace(go.Scatter(x=x_vals, y=td_systolic, mode='lines+markers', name='Tekanan Darah (Sistole)'))
+                    fig.add_trace(go.Bar(x=x_vals, y=td_systolic, name='Tekanan Darah (Sistole)'))
                 if lp is not None and not lp.empty:
-                    fig.add_trace(go.Scatter(x=x_vals, y=lp, mode='lines+markers', name='Lingkar Perut'))
+                    fig.add_trace(go.Bar(x=x_vals, y=lp, name='Lingkar Perut'))
                 if chol is not None and not chol.empty:
-                    fig.add_trace(go.Scatter(x=x_vals, y=chol, mode='lines+markers', name='Cholesterol'))
+                    fig.add_trace(go.Bar(x=x_vals, y=chol, name='Cholesterol'))
                 if asam is not None and not asam.empty:
-                    fig.add_trace(go.Scatter(x=x_vals, y=asam, mode='lines+markers', name='Asam Urat'))
+                    fig.add_trace(go.Bar(x=x_vals, y=asam, name='Asam Urat'))
                 if bmi_series is not None and not bmi_series.empty:
-                    fig.add_trace(go.Scatter(x=x_vals, y=bmi_series, mode='lines+markers', name='BMI'))
+                    fig.add_trace(go.Bar(x=x_vals, y=bmi_series, name='BMI'))
 
                 fig.update_layout(
                     title='Grafik Riwayat Medical Checkup',
                     xaxis_title='Tanggal Checkup',
-                    yaxis_title='Nilai',
+                    yaxis=dict(title='Nilai', showticklabels=True),
                     legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
                     margin=dict(l=40, r=20, t=60, b=40),
-                    template='plotly_white'
+                    template='plotly_white',
+                    barmode='group',
+                    height=600
                 )
                 grafik_chart_html = pio.to_html(fig, full_html=False, include_plotlyjs='cdn')
     except Exception:
@@ -1993,13 +2115,57 @@ def export_checkup_data_excel(request):
         return redirect("accounts:login")
 
     try:
-        # Build dashboard-like dataset (current available data)
-        df = get_dashboard_checkup_data()
-
-        # If no data, show warning and redirect to Export tab
-        if df is None or df.empty:
+        # Default: latest checkup per employee
+        df_latest = get_dashboard_checkup_data()
+        if df_latest is None or df_latest.empty:
             request.session["warning_message"] = "belum ada check up data, silahkan unggah terlebih dahulu"
             return redirect(reverse("manager:upload_export") + "?submenu=export_data")
+
+        # Apply month range filter if provided
+        start_month = request.GET.get('start_month', '').strip()
+        end_month = request.GET.get('end_month', '').strip()
+        df = df_latest.copy()
+        if start_month and end_month:
+            try:
+                import pandas as _pd
+                hist = load_checkups()
+                if hist is not None and hasattr(hist, 'empty') and not hist.empty:
+                    # Parse and filter
+                    if 'tanggal_checkup' in hist.columns:
+                        hist['tanggal_checkup'] = _pd.to_datetime(hist['tanggal_checkup'], errors='coerce', dayfirst=True)
+                    try:
+                        if 'status' not in hist.columns or hist['status'].isna().any():
+                            hist['status'] = hist.apply(compute_status, axis=1)
+                    except Exception:
+                        hist['status'] = hist.get('status', '')
+                    start_dt = _pd.to_datetime(start_month + '-01', errors='coerce')
+                    end_dt = _pd.to_datetime(end_month + '-01', errors='coerce')
+                    end_dt_end = (end_dt + _pd.offsets.MonthBegin(1)) - _pd.Timedelta(days=1) if _pd.notnull(end_dt) else end_dt
+                    if _pd.notnull(start_dt):
+                        hist = hist[hist['tanggal_checkup'] >= start_dt]
+                    if _pd.notnull(end_dt_end):
+                        hist = hist[hist['tanggal_checkup'] <= end_dt_end]
+                    if not hist.empty and 'uid' in hist.columns:
+                        hist = hist.sort_values(by=['uid','tanggal_checkup'])
+                        latest_in_range = hist.groupby('uid').tail(1).set_index('uid')
+                        check_cols = [
+                            'tanggal_checkup','tinggi','berat','lingkar_perut','bmi','umur',
+                            'gula_darah_puasa','gula_darah_sewaktu','cholesterol','asam_urat',
+                            'tekanan_darah','derajat_kesehatan','status','tanggal_MCU','expired_MCU','bmi_category'
+                        ]
+                        for col in check_cols:
+                            if col not in df.columns:
+                                df[col] = None
+                        df[check_cols] = None
+                        for uid, row in latest_in_range.iterrows():
+                            idxs = df.index[df['uid'].astype(str) == str(uid)].tolist()
+                            for idx in idxs:
+                                for col in check_cols:
+                                    if col in latest_in_range.columns:
+                                        df.at[idx, col] = row.get(col, None)
+            except Exception:
+                # If filter fails, fallback to latest
+                df = df_latest.copy()
 
         # Build Excel bytes
         excel_bytes = build_checkup_excel(df)
@@ -3110,8 +3276,16 @@ def dashboard(request):
                     except Exception:
                         # When pd is None, fallback to simple list conversion
                         y_vals = [to_float_safe(v) for v in df_plot[colname].tolist()] if hasattr(df_plot, 'tolist') else []
-                    fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines+markers', name=label))
-            fig.update_layout(title='Grafik Kesehatan', xaxis_title='Tanggal', yaxis_title='Nilai', legend_title_text='Parameter')
+                    # Convert to column (bar) chart
+                    fig.add_trace(go.Bar(x=x_vals, y=y_vals, name=label))
+            fig.update_layout(
+                title='Grafik Kesehatan',
+                xaxis_title='Tanggal',
+                yaxis=dict(title='Nilai', showticklabels=True),
+                legend_title_text='Parameter',
+                barmode='group',
+                height=600
+            )
             try:
                 print(f"[Grafik Kesehatan] uid={uid}, points={len(x_vals)}; cols={[c for _, c in param_map]}")
             except Exception:
@@ -3577,6 +3751,10 @@ def manage_karyawan_uid(request):
         'upload_history': upload_history,
         'manual_logs': manual_logs,
         'MEDIA_URL': settings.MEDIA_URL,
+        'total_karyawan': total_karyawan,
+        'total_well': total_well,
+        'total_unwell': total_unwell,
+        'latest_checkup_display': latest_checkup_display,
     }
 
     return render(request, "manager/data_management.html", context)
@@ -3585,13 +3763,14 @@ def manage_karyawan_uid(request):
 
 @require_http_methods(["GET"]) 
 def well_unwell_summary_json(request):
-    """Return Well vs Unwell totals as JSON filtered by month (YYYY-MM) and lokasi kerja."""
+    """Return Well vs Unwell totals as JSON filtered by month range (YYYY-MM) and lokasi kerja."""
     # Basic auth guard similar to dashboard (allow Manager and Tenaga Kesehatan)
     role = request.session.get("user_role")
     if not request.session.get("authenticated") or role not in ["Manager", "Tenaga Kesehatan"]:
         return JsonResponse({"error": "unauthorized"}, status=401)
 
-    month = request.GET.get("month", "")
+    month_from = request.GET.get("month_from", "")
+    month_to = request.GET.get("month_to", "")
     lokasi = request.GET.get("lokasi", "")
 
     # Load checkup data
@@ -3600,12 +3779,14 @@ def well_unwell_summary_json(request):
     except Exception:
         df = None
 
-    well_count = 0
-    unwell_count = 0
+    months = []
+    well_counts = []
+    unwell_counts = []
 
     try:
         if df is not None and hasattr(df, "empty") and not df.empty:
             import pandas as _pd
+            from datetime import datetime
             # Ensure tanggal_checkup parsed and status present
             if "tanggal_checkup" in df.columns:
                 try:
@@ -3621,30 +3802,55 @@ def well_unwell_summary_json(request):
                 # If compute fails, default unknown to Well to avoid skewing Unwell
                 df["status"] = df.get("status", "Well")
 
-            # Apply filters
-            if month:
-                try:
-                    parts = str(month).split("-")
-                    if len(parts) >= 2:
-                        year = int(parts[0])
-                        mon = int(parts[1])
-                        df = df[(df["tanggal_checkup"].dt.year == year) & (df["tanggal_checkup"].dt.month == mon)]
-                except Exception:
-                    pass
-            if lokasi:
-                if "lokasi" in df.columns:
-                    df = df[df["lokasi"].astype(str) == str(lokasi)]
+            # Apply lokasi filter if specified
+            if lokasi and "lokasi" in df.columns:
+                df = df[df["lokasi"].astype(str) == str(lokasi)]
 
-            # Aggregate counts
-            grp = df.groupby("status").size().to_dict()
-            well_count = int(grp.get("Well", 0))
-            unwell_count = int(grp.get("Unwell", 0))
-    except Exception:
+            # Parse month range
+            start_date = None
+            end_date = None
+            try:
+                if month_from:
+                    parts = str(month_from).split("-")
+                    if len(parts) >= 2:
+                        start_date = datetime(int(parts[0]), int(parts[1]), 1)
+                if month_to:
+                    parts = str(month_to).split("-")
+                    if len(parts) >= 2:
+                        # Set to last day of month
+                        if int(parts[1]) == 12:
+                            end_date = datetime(int(parts[0]) + 1, 1, 1)
+                        else:
+                            end_date = datetime(int(parts[0]), int(parts[1]) + 1, 1)
+            except Exception:
+                pass
+
+            # Filter by date range
+            if start_date:
+                df = df[df["tanggal_checkup"] >= start_date]
+            if end_date:
+                df = df[df["tanggal_checkup"] < end_date]
+
+            # Group by year-month and status
+            df["year_month"] = df["tanggal_checkup"].dt.strftime("%Y-%m")
+            monthly_stats = df.groupby(["year_month", "status"]).size().unstack(fill_value=0)
+
+            # Sort months chronologically
+            monthly_stats = monthly_stats.sort_index()
+
+            # Extract data for response
+            months = monthly_stats.index.tolist()
+            well_counts = monthly_stats.get("Well", _pd.Series(0, index=monthly_stats.index)).tolist()
+            unwell_counts = monthly_stats.get("Unwell", _pd.Series(0, index=monthly_stats.index)).tolist()
+
+    except Exception as e:
+        print(f"Error processing Well/Unwell data: {str(e)}")
         pass
 
     data = {
-        "labels": ["Well", "Unwell"],
-        "values": [well_count, unwell_count],
+        "months": months,
+        "well_counts": well_counts,
+        "unwell_counts": unwell_counts
     }
     return JsonResponse(data)
 
