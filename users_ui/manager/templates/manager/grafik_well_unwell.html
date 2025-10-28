@@ -2,28 +2,31 @@
   <h2 class="text-xl font-bold mb-3">Distribusi Well &amp; Unwell</h2>
 
   {% with month_from=request.GET.month_from month_to=request.GET.month_to %}
-  <div class="mb-4 flex items-center gap-2">
+  <form method="get" class="mb-4 flex items-center gap-2">
+    <input type="hidden" name="submenu" value="grafik" />
+    <input type="hidden" name="subtab" value="well_unwell" />
+
     <label for="wu-month-from" class="font-medium">From:</label>
-    <input type="month" id="wu-month-from" class="border px-2 py-1 rounded" value="{{ month_from|default:'' }}"/>
+    <input type="month" id="wu-month-from" name="month_from" class="border px-2 py-1 rounded" value="{{ month_from|default:'' }}"/>
     
     <label for="wu-month-to" class="font-medium ml-2">To:</label>
-    <input type="month" id="wu-month-to" class="border px-2 py-1 rounded" value="{{ month_to|default:'' }}"/>
+    <input type="month" id="wu-month-to" name="month_to" class="border px-2 py-1 rounded" value="{{ month_to|default:'' }}"/>
   {% endwith %}
 
-    <label for="wu-lokasi" class="font-medium ml-2">Lokasi Kerja:</label>
-    <select id="wu-lokasi" class="border px-2 py-1 rounded">
-      <option value="">Semua Lokasi</option>
+    <label for="lokasi_filter" class="font-medium ml-2">Lokasi Kerja:</label>
+    <select id="lokasi_filter" name="lokasi" class="border px-2 py-1 rounded">
+      <option value="" {% if not request.GET.lokasi %}selected{% endif %}>Semua Lokasi</option>
       {% if available_lokasi %}
         {% for lk in available_lokasi %}
           {% if lk %}
-          <option value="{{ lk }}">{{ lk }}</option>
+          <option value="{{ lk }}" {% if request.GET.lokasi == lk %}selected{% endif %}>{{ lk }}</option>
           {% endif %}
         {% endfor %}
       {% endif %}
     </select>
 
-    <button id="wu-refresh" class="ml-2 bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Terapkan</button>
-  </div>
+    <button type="submit" id="wu-refresh" class="ml-2 bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Terapkan</button>
+  </form>
 
   <div id="wellUnwellChart" class="w-full h-[600px] p-5"></div>
 </div>
@@ -36,7 +39,7 @@
 
   const monthFromInput = document.getElementById('wu-month-from');
   const monthToInput = document.getElementById('wu-month-to');
-  const lokasiSelect = document.getElementById('wu-lokasi');
+  const lokasiSelect = document.getElementById('lokasi_filter');
   const refreshBtn = document.getElementById('wu-refresh');
   const chartDiv = document.getElementById('wellUnwellChart');
   const endpoint = "{% url 'manager:well_unwell_summary_json' %}";
@@ -114,7 +117,10 @@
   }
 
   function bindEvents() {
-    if (refreshBtn) refreshBtn.addEventListener('click', fetchData);
+    // Option A: Keep GET form submission for deep-linking and URL updates.
+    // Remove explicit click handler on the submit button to avoid double action
+    // (AJAX fetch + full page reload). The page reload will carry filters via
+    // the form GET, and on load we fetch data based on the current inputs.
     if (monthFromInput) monthFromInput.addEventListener('change', fetchData);
     if (monthToInput) monthToInput.addEventListener('change', fetchData);
     if (lokasiSelect) lokasiSelect.addEventListener('change', fetchData);
@@ -123,4 +129,19 @@
   bindEvents();
   fetchData();
 })();
+</script>
+
+<!-- Temporary diagnostic logs: FRONTEND FORM VALIDATION -->
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const form = document.querySelector('form');
+  if (!form) {
+    console.log("[DEBUG] No form found in grafik_well_unwell.html");
+    return;
+  }
+  form.addEventListener('submit', e => {
+    console.log("[DEBUG] Form submitted. Current lokasi:",
+                document.querySelector('#lokasi_filter')?.value);
+  });
+});
 </script>

@@ -2088,9 +2088,15 @@ def well_unwell_summary_json(request):
     try:
         month_from = request.GET.get("month_from")
         month_to = request.GET.get("month_to")
+        lokasi = request.GET.get("lokasi", "").strip()
 
         from core.core_models import Checkup
         qs = Checkup.objects.all()
+
+        # Apply lokasi filtering if specified
+        if lokasi and lokasi.lower() != 'all':
+            # Filter by lokasi through the uid relationship
+            qs = qs.filter(uid__lokasi=lokasi)
 
         # Use the same date field and status values as the manager version
         start_date = datetime.strptime(month_from, "%Y-%m").date() if month_from else None
@@ -2385,13 +2391,27 @@ def nurse_grafik_kesehatan(request):
 def nurse_grafik_well_unwell(request):
     if not request.session.get("authenticated") or request.session.get("user_role") != "Tenaga Kesehatan":
         return redirect("accounts:login")
+    
+    # Get lokasi from both employee data and checkup data for consistency
     try:
-        base_df = get_dashboard_checkup_data()
+        employee_df = get_employees()
+        employee_lokasi = set()
+        if employee_df is not None and not employee_df.empty and 'lokasi' in employee_df.columns:
+            employee_lokasi = set(str(x) for x in employee_df['lokasi'].dropna().unique())
     except Exception:
-        base_df = pd.DataFrame()
-    all_lokasi = []
-    if base_df is not None and not base_df.empty and 'lokasi' in base_df.columns:
-        all_lokasi = sorted([str(x) for x in base_df['lokasi'].dropna().unique().tolist()])
+        employee_lokasi = set()
+    
+    try:
+        checkup_df = load_checkups()
+        checkup_lokasi = set()
+        if checkup_df is not None and not checkup_df.empty and 'lokasi' in checkup_df.columns:
+            checkup_lokasi = set(str(x) for x in checkup_df['lokasi'].dropna().unique())
+    except Exception:
+        checkup_lokasi = set()
+    
+    # Union of both sets to ensure dropdown includes all possible lokasi values
+    all_lokasi = sorted(list(employee_lokasi.union(checkup_lokasi)))
+    
     context = {
         'grafik_subtab': 'well_unwell',
         'available_lokasi': all_lokasi,

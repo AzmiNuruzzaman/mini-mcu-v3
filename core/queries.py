@@ -148,17 +148,27 @@ def load_checkups():
         "checkup_id", "uid_id", "tanggal_checkup", "tanggal_lahir", "umur",
         "tinggi", "berat", "lingkar_perut", "bmi",
         "gula_darah_puasa", "gula_darah_sewaktu", "cholesterol", "asam_urat",
-        "tekanan_darah", "derajat_kesehatan", "lokasi",
-        "uid__nama", "uid__jabatan", "uid__lokasi"
+        "tekanan_darah", "derajat_kesehatan",
+        # Keep both sources of lokasi but we will standardize to a single column below
+        "lokasi",           # lokasi recorded on checkups (may be null or outdated)
+        "uid__lokasi",      # authoritative lokasi from Karyawan master
+        "uid__nama", "uid__jabatan"
     )
     df = pd.DataFrame(list(qs))
     # Normalize related field names
     df = df.rename(columns={
         "uid__nama": "nama",
         "uid__jabatan": "jabatan",
-        "uid__lokasi": "lokasi",
+        "uid__lokasi": "lokasi_master",  # avoid duplicate column name
         "uid_id": "uid",
     })
+    # Standardize to a single 'lokasi' column: prefer master lokasi when available
+    if not df.empty:
+        if "lokasi_master" in df.columns:
+            # Prefer lokasi from Karyawan master, fallback to checkup.lokasi
+            df["lokasi"] = df["lokasi_master"].where(df["lokasi_master"].notnull(), df.get("lokasi"))
+            # Drop helper column to prevent duplicate name issues downstream
+            df = df.drop(columns=["lokasi_master"]) if "lokasi_master" in df.columns else df
     df = _round_numeric_cols(df)
     for col in ["tanggal_checkup", "tanggal_lahir"]:
         if col in df.columns:

@@ -77,6 +77,17 @@ def dashboard(request):
     elif 'grafik/well_unwell' in path_str or 'dashboard/grafik/well_unwell' in path_str:
         active_submenu = 'grafik'
         forced_subtab = 'well_unwell'
+
+    # [DEBUG] STEP 3 — Backend parameter trace
+    try:
+        print("[DEBUG] Incoming GET params:", request.GET)
+    except Exception:
+        pass
+    try:
+        lokasi_filter = request.GET.get("lokasi", "").strip()
+        print("[DEBUG] lokasi_filter value:", lokasi_filter)
+    except Exception:
+        pass
     
     # Grafik JSON API: return processed data for chart overhaul
     if active_submenu == 'grafik' and request.GET.get('grafik_json') == '1':
@@ -3003,8 +3014,28 @@ def dashboard(request):
         df['jabatan_clean'] = ''
         df['jabatan_key'] = ''
     
-    # Get all available locations before filtering (exclude empty values)
+    # Get available locations for dropdowns
+    # 1) From dashboard (employees-based) data
     all_lokasi = sorted([loc for loc in df['lokasi'].dropna().unique().tolist() if str(loc).strip()])
+    # 2) From checkups data to align with grafik JSON source
+    try:
+        chk_df = load_checkups()
+        if chk_df is not None and hasattr(chk_df, 'empty') and not chk_df.empty:
+            chk_col = None
+            if 'lokasi' in chk_df.columns:
+                chk_col = 'lokasi'
+            elif 'Lokasi Kerja' in chk_df.columns:
+                chk_col = 'Lokasi Kerja'
+            if chk_col:
+                checkup_lokasi = [loc for loc in chk_df[chk_col].dropna().unique().tolist() if str(loc).strip()]
+            else:
+                checkup_lokasi = []
+        else:
+            checkup_lokasi = []
+    except Exception:
+        checkup_lokasi = []
+    # 3) Use the union (ensures dropdown reflects locations present in checkups JSON and employee list)
+    available_lokasi_union = sorted(set(all_lokasi) | set(checkup_lokasi))
     
     # Make an unfiltered copy for card totals (keep cards constant when filters change)
     df_all = df.copy()
@@ -3017,8 +3048,13 @@ def dashboard(request):
         'status': request.GET.get('status', ''),  # Well/Unwell
         'expiry': request.GET.get('expiry', ''),  # Expired/Almost Expired filter
     }
-    
+
     # Apply filters
+    # [DEBUG] Data count before applying filters (including lokasi)
+    try:
+        print("[DEBUG] Data count before filter:", len(df))
+    except Exception:
+        pass
     if filters['nama']:
         df = df[df['nama'].astype(str).str.contains(filters['nama'], case=False, na=False)]
     if filters['jabatan']:
@@ -3027,6 +3063,11 @@ def dashboard(request):
         df = df[df['jabatan_key'] == filt_clean]
     if filters['lokasi']:  # Filter by selected location
         df = df[df['lokasi'] == filters['lokasi']]
+    # [DEBUG] Data count after lokasi filter (or same as before when lokasi not provided)
+    try:
+        print("[DEBUG] Data count after lokasi filter:", len(df))
+    except Exception:
+        pass
     if filters['status']:  # Filter by Well/Unwell status
         df = df[df['status'] == filters['status']]
     # Date range filter removed: always showing latest checkup data
@@ -3063,8 +3104,8 @@ def dashboard(request):
             if key and key not in jabatan_map:
                 jabatan_map[key] = val
     available_jabatan = sorted(jabatan_map.values())
-    # Use all locations for lokasi dropdown
-    available_lokasi = all_lokasi
+    # Use union of employee and checkup locations for lokasi dropdown
+    available_lokasi = available_lokasi_union
     # Status options are fixed
     available_status = ['Well', 'Unwell']
     
@@ -3760,6 +3801,16 @@ def manage_karyawan_uid(request):
 @require_http_methods(["GET"]) 
 def well_unwell_summary_json(request):
     """Return Well vs Unwell totals as JSON filtered by month range (YYYY-MM) and lokasi kerja."""
+    # STEP 3️⃣ — BACKEND PARAMETER DIAGNOSTIC
+    try:
+        print("[DEBUG] Incoming GET params:", dict(request.GET))
+    except Exception:
+        pass
+    # Temporary debug info to surface diagnostics directly in JSON response for easier automated verification
+    debug_info = {
+        "incoming_params": dict(getattr(request, "GET", {})),
+        "auth_role": request.session.get("user_role"),
+    }
     # Basic auth guard similar to dashboard (allow Manager and Tenaga Kesehatan)
     role = request.session.get("user_role")
     if not request.session.get("authenticated") or role not in ["Manager", "Tenaga Kesehatan"]:
@@ -3774,6 +3825,13 @@ def well_unwell_summary_json(request):
         df = load_checkups()
     except Exception:
         df = None
+    # Capture initial DataFrame state
+    try:
+        debug_info["df_is_none"] = df is None
+        debug_info["initial_columns"] = list(df.columns) if df is not None else []
+        debug_info["initial_rows"] = (len(df) if df is not None else 0)
+    except Exception:
+        pass
 
     months = []
     well_counts = []
@@ -3783,6 +3841,11 @@ def well_unwell_summary_json(request):
         if df is not None and hasattr(df, "empty") and not df.empty:
             import pandas as _pd
             from datetime import datetime
+            try:
+                print("[DEBUG] Initial rows:", len(df))
+                debug_info["initial_rows_printed"] = len(df)
+            except Exception:
+                pass
             # Ensure tanggal_checkup parsed and status present
             if "tanggal_checkup" in df.columns:
                 try:
@@ -3798,9 +3861,51 @@ def well_unwell_summary_json(request):
                 # If compute fails, default unknown to Well to avoid skewing Unwell
                 df["status"] = df.get("status", "Well")
 
-            # Apply lokasi filter if specified
-            if lokasi and "lokasi" in df.columns:
-                df = df[df["lokasi"].astype(str) == str(lokasi)]
+            # Apply lokasi filter with safe normalization (case/whitespace-insensitive)
+            lokasi_filter = (request.GET.get("lokasi", "") or "").strip()
+            try:
+                print("[DEBUG] Filter lokasi:", lokasi_filter)
+                debug_info["lokasi_filter"] = lokasi_filter
+            except Exception:
+                pass
+            if lokasi_filter and lokasi_filter.lower() not in ["all", ""]:
+                # Determine which column to use for lokasi (support both 'lokasi' and 'Lokasi Kerja')
+                col_name = None
+                if "lokasi" in df.columns:
+                    col_name = "lokasi"
+                elif "Lokasi Kerja" in df.columns:
+                    col_name = "Lokasi Kerja"
+                debug_info["lokasi_col_name"] = col_name
+                if col_name:
+                    try:
+                        df[col_name] = df[col_name].astype(str).str.strip().str.lower()
+                        lokasi_norm = lokasi_filter.lower()
+                        # Optional debug: view unique normalized lokasi values
+                        try:
+                            print("[DEBUG] Unique lokasi values:", df[col_name].dropna().unique().tolist())
+                            debug_info["unique_lokasi_values"] = df[col_name].dropna().unique().tolist()
+                        except Exception:
+                            pass
+                        # Strict filter: if no match, return empty dataset (no rows)
+                        filtered_df = df[df[col_name] == lokasi_norm].copy()
+                        try:
+                            print("[DEBUG] Data count after lokasi filter:", len(filtered_df))
+                            debug_info["rows_after_lokasi_filter"] = len(filtered_df)
+                        except Exception:
+                            pass
+                        if hasattr(filtered_df, "empty") and filtered_df.empty:
+                            print(f"[INFO] No data found for lokasi: {lokasi_norm}")
+                            debug_info["lokasi_filter_match"] = False
+                            df = df.head(0)
+                        else:
+                            debug_info["lokasi_filter_match"] = True
+                            df = filtered_df
+                    except Exception:
+                        # Do not fallback to previous df; keep current df state
+                        pass
+                else:
+                    print("[DEBUG] Missing column 'lokasi' or 'Lokasi Kerja' in DataFrame")
+                    debug_info["lokasi_col_missing"] = True
 
             # Parse month range
             start_date = None
@@ -3826,6 +3931,10 @@ def well_unwell_summary_json(request):
                 df = df[df["tanggal_checkup"] >= start_date]
             if end_date:
                 df = df[df["tanggal_checkup"] < end_date]
+            try:
+                debug_info["rows_after_date_filter"] = len(df)
+            except Exception:
+                pass
 
             # Group by year-month and status
             df["year_month"] = df["tanggal_checkup"].dt.strftime("%Y-%m")
@@ -3841,12 +3950,15 @@ def well_unwell_summary_json(request):
 
     except Exception as e:
         print(f"Error processing Well/Unwell data: {str(e)}")
+        debug_info["processing_error"] = str(e)
         pass
 
     data = {
         "months": months,
         "well_counts": well_counts,
-        "unwell_counts": unwell_counts
+        "unwell_counts": unwell_counts,
+        # Temporary: include debug info for automated diagnostics. Will be removed after verification.
+        "debug": debug_info
     }
     return JsonResponse(data)
 
