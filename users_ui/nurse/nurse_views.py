@@ -2090,6 +2090,14 @@ def well_unwell_summary_json(request):
         month_to = request.GET.get("month_to")
         lokasi = request.GET.get("lokasi", "").strip()
 
+        # Debug diagnostics for Railway behavior
+        try:
+            print("[DEBUG][Nurse] Month From:", month_from)
+            print("[DEBUG][Nurse] Month To:", month_to)
+            print("[DEBUG][Nurse] Lokasi:", lokasi if lokasi else "(Semua Lokasi)")
+        except Exception:
+            pass
+
         from core.core_models import Checkup
         qs = Checkup.objects.all()
 
@@ -2098,15 +2106,43 @@ def well_unwell_summary_json(request):
             # Filter by lokasi through the uid relationship
             qs = qs.filter(uid__lokasi=lokasi)
 
-        # Use the same date field and status values as the manager version
-        start_date = datetime.strptime(month_from, "%Y-%m").date() if month_from else None
-        end_date = datetime.strptime(month_to, "%Y-%m").date() if month_to else None
+        # Robust date range filtering: compute full month boundaries and filter by date
+        import calendar
+        from datetime import date as _date
 
-        if start_date and end_date:
-            qs = qs.filter(tanggal_checkup__year__gte=start_date.year, tanggal_checkup__month__gte=start_date.month)
-            qs = qs.filter(tanggal_checkup__year__lte=end_date.year, tanggal_checkup__month__lte=end_date.month)
-        elif start_date:
-            qs = qs.filter(tanggal_checkup__year=start_date.year, tanggal_checkup__month=start_date.month)
+        def _month_bounds(ym_str):
+            try:
+                parts = str(ym_str).split("-")
+                if len(parts) >= 2:
+                    y = int(parts[0]); m = int(parts[1])
+                    start = _date(y, m, 1)
+                    last_day = calendar.monthrange(y, m)[1]
+                    end = _date(y, m, last_day)
+                    return start, end
+            except Exception:
+                pass
+            return None, None
+
+        start_dt = end_dt = None
+        if month_from and month_to:
+            s, _ = _month_bounds(month_from)
+            _, e = _month_bounds(month_to)
+            start_dt, end_dt = s, e
+        elif month_from:
+            start_dt, end_dt = _month_bounds(month_from)
+        elif month_to:
+            start_dt, end_dt = _month_bounds(month_to)
+
+        if start_dt:
+            qs = qs.filter(tanggal_checkup__gte=start_dt)
+        if end_dt:
+            qs = qs.filter(tanggal_checkup__lte=end_dt)
+
+        # Debug: count after filtering
+        try:
+            print("[DEBUG][Nurse] Filtered QS count:", qs.count())
+        except Exception:
+            pass
 
         # Aggregate counts by month using health metric thresholds
         data = (
@@ -2145,6 +2181,13 @@ def well_unwell_summary_json(request):
             }
             for item in data
         ]
+
+        # Debug: unique months in aggregated data
+        try:
+            unique_months = sorted({row["month"].strftime("%Y-%m") for row in data})
+            print("[DEBUG][Nurse] Unique months in aggregated data:", unique_months)
+        except Exception:
+            pass
 
         return JsonResponse(result, safe=False)
 

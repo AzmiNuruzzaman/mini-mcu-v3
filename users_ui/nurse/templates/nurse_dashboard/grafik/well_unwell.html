@@ -53,16 +53,22 @@
   async function fetchData() {
     const params = new URLSearchParams();
     const monthFrom = monthFromInput.value;
-    const monthTo = monthToInput.value;
+    let monthTo = monthToInput.value;
     const lokasi = lokasiSelect.value;
     
     // Always include month range parameters, even if empty
+    // If only a single month is chosen, use it for both start and end.
+    // This matches local behavior and avoids Railway requiring both months.
+    if (monthFrom && !monthTo) {
+      monthTo = monthFrom;
+    }
     params.set('month_from', monthFrom || '');
     params.set('month_to', monthTo || '');
     if (lokasi) params.set('lokasi', lokasi);
 
     const url = `${endpoint}?${params.toString()}`;
     try {
+      console.log('[DEBUG] Fetching summary-json with params:', monthFrom, monthTo, lokasi);
       const res = await fetch(url, { credentials: 'same-origin' });
       const data = await res.json();
       if (data.error) {

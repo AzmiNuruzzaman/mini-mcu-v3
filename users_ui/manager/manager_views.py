@@ -3907,22 +3907,33 @@ def well_unwell_summary_json(request):
                     print("[DEBUG] Missing column 'lokasi' or 'Lokasi Kerja' in DataFrame")
                     debug_info["lokasi_col_missing"] = True
 
-            # Parse month range
+            # Parse month range (robust): if only single month provided, bound to that month
             start_date = None
             end_date = None
             try:
                 if month_from:
                     parts = str(month_from).split("-")
                     if len(parts) >= 2:
-                        start_date = datetime(int(parts[0]), int(parts[1]), 1)
+                        y = int(parts[0]); m = int(parts[1])
+                        start_date = datetime(y, m, 1)
+                        # If month_to missing, set end to first day of next month
+                        if not month_to:
+                            if m == 12:
+                                end_date = datetime(y + 1, 1, 1)
+                            else:
+                                end_date = datetime(y, m + 1, 1)
                 if month_to:
                     parts = str(month_to).split("-")
                     if len(parts) >= 2:
-                        # Set to last day of month
-                        if int(parts[1]) == 12:
-                            end_date = datetime(int(parts[0]) + 1, 1, 1)
+                        y2 = int(parts[0]); m2 = int(parts[1])
+                        # end_date is first day of next month to make filter exclusive upper bound
+                        if m2 == 12:
+                            end_date = datetime(y2 + 1, 1, 1)
                         else:
-                            end_date = datetime(int(parts[0]), int(parts[1]) + 1, 1)
+                            end_date = datetime(y2, m2 + 1, 1)
+                        # If month_from missing, set start to first day of target month
+                        if not start_date:
+                            start_date = datetime(y2, m2, 1)
             except Exception:
                 pass
 
