@@ -66,16 +66,41 @@
 
     const url = `${endpoint}?${params.toString()}`;
     try {
+      console.log('[DEBUG] Environment check:', window.location.origin);
+      console.log('[DEBUG] Fetch URL:', url);
+      console.log('[DEBUG] Filter lokasi value:', lokasi);
       const res = await fetch(url, { credentials: 'same-origin' });
       const data = await res.json();
       if (data.error) {
         console.error('API error:', data.error);
         return;
       }
-      renderChart(data);
+      const normalized = normalizeResponse(data);
+      renderChart(normalized);
     } catch (e) {
       console.error('Failed to fetch Well/Unwell data', e);
     }
+  }
+
+  // Normalize backend response to a consistent structure
+  function normalizeResponse(data) {
+    // Case A: current manager backend shape
+    if (!Array.isArray(data) && data && (data.months || data.well_counts || data.unwell_counts)) {
+      return {
+        months: data.months || [],
+        well_counts: data.well_counts || [],
+        unwell_counts: data.unwell_counts || []
+      };
+    }
+    // Case B: legacy/list-of-objects shape: [{month, well, unwell}, ...]
+    if (Array.isArray(data)) {
+      const months = data.map(x => x.month);
+      const wellCounts = data.map(x => x.well);
+      const unwellCounts = data.map(x => x.unwell);
+      return { months, well_counts: wellCounts, unwell_counts: unwellCounts };
+    }
+    // Fallback: empty
+    return { months: [], well_counts: [], unwell_counts: [] };
   }
 
   function renderChart(data) {
