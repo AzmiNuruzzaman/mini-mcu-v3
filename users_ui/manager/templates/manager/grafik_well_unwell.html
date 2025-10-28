@@ -2,7 +2,7 @@
   <h2 class="text-xl font-bold mb-3">Distribusi Well &amp; Unwell</h2>
 
   {% with month_from=request.GET.month_from month_to=request.GET.month_to %}
-  <form method="get" class="mb-4 flex items-center gap-2">
+  <form id="wellunwell-filter-form" method="get" class="mb-4 flex items-center gap-2">
     <input type="hidden" name="submenu" value="grafik" />
     <input type="hidden" name="subtab" value="well_unwell" />
 
@@ -41,6 +41,7 @@
   const monthToInput = document.getElementById('wu-month-to');
   const lokasiSelect = document.getElementById('lokasi_filter');
   const refreshBtn = document.getElementById('wu-refresh');
+  const filterForm = document.getElementById('wellunwell-filter-form');
   const chartDiv = document.getElementById('wellUnwellChart');
   const endpoint = "{% url 'manager:well_unwell_summary_json' %}";
 
@@ -142,13 +143,17 @@
   }
 
   function bindEvents() {
-    // Option A: Keep GET form submission for deep-linking and URL updates.
-    // Remove explicit click handler on the submit button to avoid double action
-    // (AJAX fetch + full page reload). The page reload will carry filters via
-    // the form GET, and on load we fetch data based on the current inputs.
-    if (monthFromInput) monthFromInput.addEventListener('change', fetchData);
-    if (monthToInput) monthToInput.addEventListener('change', fetchData);
-    if (lokasiSelect) lokasiSelect.addEventListener('change', fetchData);
+    // Adjusted behavior: do NOT auto-update on dropdown change.
+    // Only update chart when user clicks "Terapkan" (form submit).
+    if (filterForm) {
+      filterForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        console.log("[DEBUG] Submit triggered. Lokasi:", lokasiSelect?.value);
+        fetchData();
+      });
+    } else {
+      console.log('[DEBUG] No filter form found for Well & Unwell chart');
+    }
   }
 
   bindEvents();
@@ -159,7 +164,7 @@
 <!-- Temporary diagnostic logs: FRONTEND FORM VALIDATION -->
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-  const form = document.querySelector('form');
+  const form = document.getElementById('wellunwell-filter-form');
   if (!form) {
     console.log("[DEBUG] No form found in grafik_well_unwell.html");
     return;

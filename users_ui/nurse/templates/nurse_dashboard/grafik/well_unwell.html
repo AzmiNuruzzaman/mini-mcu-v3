@@ -115,10 +115,14 @@
   }
 
   function bindEvents() {
-    if (refreshBtn) refreshBtn.addEventListener('click', fetchData);
-    if (monthFromInput) monthFromInput.addEventListener('change', fetchData);
-    if (monthToInput) monthToInput.addEventListener('change', fetchData);
-    if (lokasiSelect) lokasiSelect.addEventListener('change', fetchData);
+    // Adjusted behavior: do NOT auto-update on input change.
+    // Only update chart when user clicks "Terapkan" button.
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', function() {
+        console.log('[DEBUG] Nurse Submit triggered. Lokasi:', lokasiSelect?.value);
+        fetchData();
+      });
+    }
   }
 
   bindEvents();
