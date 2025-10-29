@@ -12,6 +12,14 @@ urlpatterns = [
 
     # JSON API for Grafik → Well & Unwell summary
     path("grafik/well-unwell-summary/", manager_views.well_unwell_summary_json, name="well_unwell_summary_json"),
+    # JSON API for Grafik → Health Metrics summary (monthly trends)
+    path("grafik/health-metrics-summary/", manager_views.health_metrics_summary_json, name="health_metrics_summary_json"),
+    # JSON API for Grafik → Lokasi list (used by filters)
+    path("grafik/lokasi-list/", manager_views.lokasi_list_json, name="lokasi_list_json"),
+    # JSON API for Grafik → Karyawan list (used by filters)
+    path("grafik/karyawan-list/", manager_views.karyawan_list_json, name="karyawan_list_json"),
+    # Diagnostic endpoint to capture frontend logs before potential freeze
+    path("grafik/diagnostic-log/", manager_views.grafik_diagnostic_log, name="grafik_diagnostic_log"),
 
     # Avatar Upload
     path("upload-avatar/", manager_views.upload_avatar, name="upload_avatar"),

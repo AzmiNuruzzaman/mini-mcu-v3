@@ -77,7 +77,7 @@
                 <th class="border px-4 py-2 text-left">Value</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody class="odd:bg-white even:bg-slate-50">
               <tr>
                 <td class="border px-4 py-2">Nama</td>
                 <td class="border px-4 py-2">{{ employee.nama }}</td>
@@ -318,6 +318,10 @@
    {% if active_submenu == 'data_karyawan' and active_subtab == 'edit_data' %}
    <div id="edit-data-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4">
       <h2 class="text-xl font-bold mb-3">Edit Data Checkup</h2>
+      <div class="mb-3 flex flex-wrap gap-2">
+        <a href="{% url 'nurse:export_checkup_history_by_uid' employee.uid %}" class="inline-flex items-center bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700">Download seluruh riwayat (XLS)</a>
+        <a href="{% url 'nurse:export_checkup_history_by_uid_pdf' employee.uid %}" class="inline-flex items-center bg-yellow-600 text-white px-3 py-2 rounded hover:bg-yellow-700">Download seluruh riwayat (PDF)</a>
+      </div>
       <div class="mb-2">
          <span class="text-sm text-green-600 font-semibold cursor-help" title="Pilih karyawan di tab Karyawan Profile">Pilih karyawan di tab Karyawan Profile</span>
       </div>
@@ -328,16 +332,16 @@
 
   <!-- History Medical Check Up Content -->
    {% if active_submenu == 'history' %}
-   <div id="history-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4">
-      <h2 class="text-xl font-bold mb-3">History Medical Check Up</h2>
-      <a href="{% url 'nurse:export_checkup_history_by_uid' employee.uid %}" class="inline-flex items-center bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700 mb-3">Download seluruh riwayat (XLS)</a>
-      <a href="{% url 'nurse:export_checkup_history_by_uid_pdf' employee.uid %}" class="inline-flex items-center bg-yellow-600 text-white px-3 py-2 rounded hover:bg-yellow-700 mb-3 ml-2">Download seluruh riwayat (PDF)</a>
+   <div id="history-content" class="rounded-xl border border-slate-300 shadow bg-white p-4">
+      <h2 class="text-lg font-semibold text-slate-700 mb-3">History Medical Check Up</h2>
+      <a href="{% url 'nurse:export_checkup_history_by_uid' employee.uid %}" class="inline-flex items-center bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg mb-3">Download seluruh riwayat (XLS)</a>
+      <a href="{% url 'nurse:export_checkup_history_by_uid_pdf' employee.uid %}" class="inline-flex items-center bg-yellow-600 text-white px-3 py-2 rounded-lg hover:opacity-90 mb-3 ml-2">Download seluruh riwayat (PDF)</a>
       {% if history_dashboard and history_dashboard|length > 0 %}
 
       {% csrf_token %}
-      <div class="overflow-x-auto">
-        <table class="min-w-full bg-white editable-table">
-          <thead class="bg-gray-50">
+      <div class="max-w-full overflow-x-auto">
+        <table class="min-w-full text-sm border border-slate-200 rounded-lg editable-table">
+          <thead class="bg-slate-100 text-slate-700 font-semibold">
             <tr>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">UID</th>
@@ -448,67 +452,30 @@
    {% endif %}
 
   {% if active_submenu == 'grafik' %}
-  <!-- Grafik Content -->
-  <div id="grafik-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4">
-      <h2 class="text-xl font-bold mb-3">Grafik</h2>
-      <form method="get" class="mb-4 flex items-center gap-2">
-        <input type="hidden" name="submenu" value="grafik"/>
-        <label class="font-medium">Range Bulan:</label>
-        <input type="month" name="start_month" value="{{ grafik_start_month }}" class="border px-2 py-1 rounded">
-        <span class="mx-1">s/d</span>
-        <input type="month" name="end_month" value="{{ grafik_end_month }}" class="border px-2 py-1 rounded">
-        <button type="submit" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Terapkan</button>
-      </form>
-      {% if grafik_chart_html %}
-        <div class="w-full overflow-x-auto">
-          {{ grafik_chart_html|safe }}
-        </div>
-        <script>
-          document.addEventListener('DOMContentLoaded', function(){
-            var grafContainer = document.querySelector('#grafik-content .plotly-graph-div');
-            if (!grafContainer || typeof Plotly === 'undefined' || !Plotly.relayout) return;
-            const thresholdValues = {
-              'Gula Darah Puasa': 126,
-              'Gula Darah Sewaktu': 200,
-              'Asam Urat': 7,
-              'Cholesterol': 200,
-              'BMI': 30
-            };
-            grafContainer.on('plotly_legendclick', function(ev){
-              try {
-                var idx = ev.curveNumber;
-                var d = ev.data || (ev.fullData || []);
-                var name = (d && d[idx] && d[idx].name) ? d[idx].name : null;
-                if (!name) return true;
-                var thr = thresholdValues[name];
-                var shapes = [];
-                if (thr != null) {
-                  shapes = [{ type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y', y0: thr, y1: thr, line: { color: 'rgba(255,0,0,0.35)', width: 2, dash: 'dash' } }];
-                }
-                Plotly.relayout(grafContainer, { shapes: shapes, 'yaxis.showticklabels': true });
-              } catch(e) {}
-              return true;
-            });
-            grafContainer.on('plotly_click', function(ev){
-              try {
-                var pt = ev.points && ev.points[0];
-                var name = pt && pt.data && pt.data.name;
-                var thr = thresholdValues[name];
-                if (thr == null) return;
-                var shape = { type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y', y0: thr, y1: thr, line: { color: 'rgba(255,0,0,0.35)', width: 2, dash: 'dash' } };
-                Plotly.relayout(grafContainer, { shapes: [shape], 'yaxis.showticklabels': true });
-              } catch(e) {}
-            });
-          });
-        </script>
-      {% else %}
-        <div class="p-4 bg-gray-50 border rounded text-gray-500">Belum ada data grafik untuk range ini.</div>
-      {% endif %}
+  <!-- Grafik Content (Vue GrafikManager with legacy Plotly fallback) -->
+  <div id="grafik-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-0">
+    <!-- Vue mount point for GrafikManager -->
+    <div id="grafik-manager" class="min-h-[300px]" data-preselect-uid="{{ employee.uid }}" data-hide-selectors="true"></div>
+
+    <!-- Filters are hidden and Karyawan preselected via data-* attributes consumed by GrafikManager -->
+
+    
   </div>
   {% endif %}
 </div>
 {% load static %}
 <script src="{% static 'users_ui/nurse/js/edit_karyawan.js' %}"></script>
+{% endblock %}
+
+{% block extra_scripts %}
+  {% if active_submenu == 'grafik' %}
+    <!-- ApexCharts for chart rendering (load BEFORE component so charts can mount immediately) -->
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <!-- GrafikManager component (depends on Vue global and ApexCharts) -->
+    <script src="{% static 'js/components/grafik_manager.js' %}"></script>
+    <!-- Nurse alias for GrafikManager (optional) -->
+    <script src="{% static 'js/components/grafik_nurse.js' %}"></script>
+  {% endif %}
 {% endblock %}
 
 <script>

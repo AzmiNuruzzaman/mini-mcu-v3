@@ -1,293 +1,404 @@
-{% extends "nurse/nurse_index.html" %}
+{% extends "shared/shared_base.html" %}
 {% load static %}
 
-{% block page_content %}
-<div class="bg-white rounded-lg shadow_md p-6">
-    <!-- Submenu Navigation -->
-    <div class="flex gap-6 mb-6 px-3 pt-3 border-b border-slate-300 bg-white rounded-t-xl shadow-sm">
-        <a href="?submenu=data" 
-           class="pb-3 px-4 font-medium text-gray-700 hover:bg-slate-100 rounded-t-md border border-slate-300 -mb-px transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300
-                  {% if active_submenu == 'data' %}bg-blue-600 text-white border-blue-600{% endif %}">
-            DATA KARYAWAN
+{% block title %}Nurse Dashboard - {{ active_menu }}{% endblock %}
+
+{% block sidebar_menu %}
+<ul class="flex flex-col gap-2">
+    {% for item in menu_items %}
+    <li>
+        <a href="{{ item.url }}" 
+           class="flex items-center gap-3 py-3 px-4 rounded-lg transition-all cursor-pointer
+                  {% if active_menu == item.key or active_menu == item.name %}bg-white text-gray-900 shadow-md{% else %}hover:bg-white/10 text-white{% endif %}">
+            <i class="fas fa-{{ item.icon }} w-5 h-5"></i>
+            <span class="font-medium">{{ item.name }}</span>
         </a>
-        <a href="?submenu=grafik" 
-           class="pb-3 px-4 font-medium text-gray-700 hover:bg-slate-100 rounded-t-md border border-slate-300 -mb-px transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300
-                  {% if active_submenu == 'grafik' %}bg-blue-600 text-white border-blue-600{% endif %}">
-            GRAFIK
+    </li>
+    {% endfor %}
+    <!-- Fallback when no menu_items provided (shouldn't happen due to context processor) -->
+    {% if not menu_items %}
+    <li>
+        <a href="#" class="flex items-center gap-3 py-3 px-4 rounded-lg transition-all cursor-pointer hover:bg-white/10 text-white">
+            <i class="fas fa-home w-5 h-5"></i>
+            <span class="font-medium">Dashboard</span>
         </a>
+    </li>
+    {% endif %}
+  </ul>
+{% endblock %}
+
+{% block main_content %}
+<div class="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-6">
+  <div class="max-w-[1600px] mx-auto">
+
+    {% if success_message %}
+    <div id="toast-success" class="fixed top-4 right-4 z-50 bg-green-600 text-white px-4 py-3 rounded shadow-lg flex items-center gap-3">
+      <span class="font-medium">{{ success_message }}</span>
+      <button type="button" onclick="var el=document.getElementById('toast-success'); if(el){ el.remove(); }" class="ml-2 text-white/90 hover:text-white focus:outline-none">&times;</button>
+    </div>
+    <script>
+      setTimeout(function(){ var el=document.getElementById('toast-success'); if(el){ el.remove(); } }, 4000);
+    </script>
+    {% endif %}
+    {% if error_message %}
+    <div id="toast-error" class="fixed top-4 right-4 z-50 bg-red-600 text-white px-4 py-3 rounded shadow-lg flex items-center gap-3">
+      <span class="font-medium">{{ error_message }}</span>
+      <button type="button" onclick="var el=document.getElementById('toast-error'); if(el){ el.remove(); }" class="ml-2 text-white/90 hover:text-white focus:outline-none">&times;</button>
+    </div>
+    <script>
+      setTimeout(function(){ var el=document.getElementById('toast-error'); if(el){ el.remove(); } }, 6000);
+    </script>
+    {% endif %}
+
+    <!-- Header -->
+    <div class="mb-2">
+      <h1 class="text-gray-900 text-2xl font-semibold mb-1">Nurse Dashboard</h1>
+      <p class="text-gray-600 text-sm">Kelola data kesehatan karyawan</p>
     </div>
 
-    <!-- Data Karyawan Content -->
-    <div id="data-content" class="{% if active_submenu != 'data' %}hidden{% endif %}">
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div class="bg-blue-100 p-4 rounded-lg">
-                <h3 class="text-lg font-semibold text-blue-800">Total Karyawan</h3>
-                <p class="text-2xl font-bold text-blue-900">{{ total_karyawan }}</p>
-            </div>
-            <div class="bg-green-100 p-4 rounded-lg">
-                <h3 class="text-lg font-semibold text-green-800">Well</h3>
-                <p class="text-2xl font-bold text-green-900">{{ total_well }}</p>
-            </div>
-            <div class="bg-red-100 p-4 rounded-lg">
-                <h3 class="text-lg font-semibold text-red-800">Unwell</h3>
-                <p class="text-2xl font-bold text-red-900">{{ total_unwell }}</p>
-            </div>
-        </div>
-
-        <!-- Filter Form (Refactored compact card/grid layout) -->
-        <div class="bg-white border shadow-md rounded-lg mb-6 p-4">
-          <form method="get" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-            <input type="hidden" name="submenu" value="{{ active_submenu }}">
-
-            <!-- Start Month -->
-            <div class="flex flex-col">
-              <label class="text-sm font-medium mb-1" for="start-month">Start Month</label>
-              <input type="month" name="start_month" id="start-month" value="{{ filters.start_month|default:default_start_month }}" class="border px-2 py-1 rounded">
-            </div>
-
-            <!-- End Month -->
-            <div class="flex flex-col">
-              <label class="text-sm font-medium mb-1" for="end-month">End Month</label>
-              <input type="month" name="end_month" id="end-month" value="{{ filters.end_month|default:default_end_month }}" class="border px-2 py-1 rounded">
-            </div>
-
-            <!-- Employee Selector -->
-            <div class="flex flex-col">
-              <label class="text-sm font-medium mb-1" for="uid">Karyawan</label>
-              <select name="uid" id="uid" class="border px-2 py-1 rounded">
-                <option value="all" {% if filters.uid == 'all' %}selected{% endif %}>Semua Karyawan</option>
-                {% if available_employees %}
-                  {% for emp in available_employees %}
-                  <option value="{{ emp.uid }}" {% if filters.uid == emp.uid %}selected{% endif %}>{{ emp.nama }}</option>
-                  {% endfor %}
-                {% endif %}
-              </select>
-            </div>
-
-            <!-- Status Selector -->
-            <div class="flex flex-col">
-              <label class="text-sm font-medium mb-1" for="status">Status</label>
-              <select name="status" id="status" class="border px-2 py-1 rounded">
-                <option value="">Semua Status</option>
-                {% for status in available_status %}
-                <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status }}</option>
-                {% endfor %}
-              </select>
-            </div>
-
-            <!-- Nama -->
-            <div class="flex flex-col">
-              <label class="text-sm font-medium mb-1" for="nama">Nama</label>
-              <input type="text" id="nama" name="nama" value="{{ filters.nama }}" class="border px-2 py-1 rounded" placeholder="Cari berdasarkan nama...">
-            </div>
-
-            <!-- Jabatan -->
-            <div class="flex flex-col">
-              <label class="text-sm font-medium mb-1" for="jabatan">Jabatan</label>
-              <select id="jabatan" name="jabatan" class="border px-2 py-1 rounded">
-                <option value="">Semua Jabatan</option>
-                {% for jabatan in available_jabatan %}
-                <option value="{{ jabatan }}" {% if filters.jabatan == jabatan %}selected{% endif %}>{{ jabatan }}</option>
-                {% endfor %}
-              </select>
-            </div>
-
-            <!-- Lokasi -->
-            <div class="flex flex-col">
-              <label class="text-sm font-medium mb-1" for="lokasi">Lokasi</label>
-              <select id="lokasi" name="lokasi" class="border px-2 py-1 rounded">
-                <option value="">Semua Lokasi</option>
-                {% for lokasi in available_lokasi %}
-                <option value="{{ lokasi }}" {% if filters.lokasi == lokasi %}selected{% endif %}>{{ lokasi }}</option>
-                {% endfor %}
-              </select>
-            </div>
-
-            <!-- Expiry Warning -->
-            <div class="flex flex-col">
-              <label class="text-sm font-medium mb-1" for="expiry">Expiry Warning (≤60 hari)</label>
-              <label class="inline-flex items-center gap-2 text-sm text-gray-700">
-                <input type="checkbox" id="expiry" name="expiry" value="warning" {% if filters.expiry == 'warning' %}checked{% endif %} class="h-4 w-4 text-blue-600 border-gray-300 rounded">
-                <span>Tampilkan yang mendekati expired</span>
-              </label>
-            </div>
-
-            <!-- Apply & Reset -->
-            <div class="flex items-end">
-              <div class="w-full flex gap-2">
-                <button type="submit" class="w-full bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Terapkan</button>
-                {% if filters.nama or filters.jabatan or filters.lokasi or filters.status or filters.expiry or filters.start_month or filters.end_month or filters.uid %}
-                <a href="?submenu={{ active_submenu }}" class="bg-gray-200 text-gray-700 px-3 py-1 rounded hover:bg-gray-300">Reset</a>
-                {% endif %}
-              </div>
-            </div>
-          </form>
-        </div>
-
-        <div class="overflow-x-auto">
-            <table class="min-w-full bg-white">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">UID</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nama</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Jabatan</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lokasi</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal Lahir</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Umur</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal Checkup</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tinggi</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Berat</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BMI</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BMI Category</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lingkar Perut</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gula Darah Puasa</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gula Darah Sewaktu</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cholesterol</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Asam Urat</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tekanan Darah</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Derajat Kesehatan</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal MCU</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Expired MCU</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-200">
-                    {% for employee in employees %}
-                    <tr class="dashboard-row hover:bg-gray-50 cursor-pointer" data-url="{% url 'nurse:karyawan_detail' employee.uid %}?submenu=data_karyawan&subtab=profile" title="Klik baris untuk membuka profil">
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ forloop.counter|add:start_index }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.uid }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.nama }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.jabatan }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.lokasi }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.tanggal_lahir|default:"-" }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.umur|default:"-" }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.tanggal_checkup|default:"-" }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.tinggi|default:"-" }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.berat|default:"-" }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.bmi|default:"-" }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.bmi_category|default:"-" }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.lingkar_perut|default:"-" }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.gula_darah_puasa|default:"-" }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.gula_darah_sewaktu|default:"-" }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.cholesterol|default:"-" }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.asam_urat|default:"-" }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">{{ employee.tekanan_darah|default:"-" }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">
-                            {% with dk=employee.derajat_kesehatan|default:""|upper %}
-                                {% if dk == "P1" or dk == "P2" or dk == "P3" %}
-                                    <span class="text-green-600 font-semibold">{{ dk }}</span>
-                                {% elif dk == "P4" %}
-                                    <span class="text-yellow-600 font-semibold">{{ dk }}</span>
-                                {% elif dk == "P5" %}
-                                    <span class="text-orange-600 font-semibold">{{ dk }}</span>
-                                {% elif dk == "P6" or dk == "P7" %}
-                                    <span class="text-red-600 font-semibold">{{ dk }}</span>
-                                {% elif dk %}
-                                    <span class="text-gray-700 font-semibold">{{ dk }}</span>
-                                {% else %}
-                                    <span class="text-gray-400 italic">-</span>
-                                {% endif %}
-                            {% endwith %}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap">
-                            {% if employee.mcu_is_expired %}
-                                <span class="text-red-600 font-semibold">{{ employee.tanggal_MCU|default:"-" }}</span>
-                            {% elif employee.mcu_is_warning %}
-                                <span class="text-yellow-600 font-semibold">{{ employee.tanggal_MCU|default:"-" }}</span>
-                            {% else %}
-                                {{ employee.tanggal_MCU|default:"-" }}
-                            {% endif %}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap">
-                            {% if employee.mcu_is_expired %}
-                                <span class="text-red-600 font-semibold">{{ employee.expired_MCU|default:"-" }}</span>
-                            {% elif employee.mcu_is_warning %}
-                                <span class="text-yellow-600 font-semibold">{{ employee.expired_MCU|default:"-" }}</span>
-                            {% else %}
-                                {{ employee.expired_MCU|default:"-" }}
-                            {% endif %}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap">
-                            {% if employee.status == "Unwell" %}
-                                <span class="text-red-600 font-semibold">Unwell</span>
-                            {% elif employee.status == "Well" %}
-                                <span class="text-green-600 font-semibold">Well</span>
-                            {% else %}
-                                <span class="text-gray-400 italic">-</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-
-        <!-- Pagination Controls (fixed & centered) -->
-        {% if total_pages > 1 %}
-        <div class="fixed bottom-6 left-1/2 -translate-x-1/2 transform z-40 flex justify-center items-center gap-2 bg-white/90 backdrop-blur-sm rounded-full shadow-md px-4 py-2 border border-gray-200">
-            {% if current_page > 1 %}
-            <a href="?submenu={{ active_submenu }}&page={{ current_page|add:'-1' }}{% if current_filters.nama %}&nama={{ current_filters.nama }}{% endif %}{% if current_filters.jabatan %}&jabatan={{ current_filters.jabatan }}{% endif %}{% if current_filters.lokasi %}&lokasi={{ current_filters.lokasi }}{% endif %}{% if current_filters.status %}&status={{ current_filters.status }}{% endif %}{% if current_filters.expiry %}&expiry={{ current_filters.expiry }}{% endif %}{% if current_filters.start_month %}&start_month={{ current_filters.start_month }}{% endif %}{% if current_filters.end_month %}&end_month={{ current_filters.end_month }}{% endif %}"
-               class="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">
-                Sebelumnya
-            </a>
-            {% endif %}
-
-            <span class="px-3 py-1 text-gray-700">
-                Page {{ current_page }} of {{ total_pages }}
-            </span>
-
-            {% if current_page < total_pages %}
-            <a href="?submenu={{ active_submenu }}&page={{ current_page|add:'1' }}{% if current_filters.nama %}&nama={{ current_filters.nama }}{% endif %}{% if current_filters.jabatan %}&jabatan={{ current_filters.jabatan }}{% endif %}{% if current_filters.lokasi %}&lokasi={{ current_filters.lokasi }}{% endif %}{% if current_filters.status %}&status={{ current_filters.status }}{% endif %}{% if current_filters.expiry %}&expiry={{ current_filters.expiry }}{% endif %}{% if current_filters.start_month %}&start_month={{ current_filters.start_month }}{% endif %}{% if current_filters.end_month %}&end_month={{ current_filters.end_month }}{% endif %}"
-               class="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">
-                Berikutnya
-            </a>
-            {% endif %}
-        </div>
-        {% endif %}
+    <!-- Alert Card -->
+    <div class="mb-2 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-lg shadow-sm flex items-center gap-2 text-yellow-800">
+      <i class="fas fa-circle-exclamation text-yellow-600"></i>
+      <span>Checkup Terakhir: <span class="font-semibold">{{ latest_checkup_display|default:"-" }}</span></span>
     </div>
 
-    <!-- Grafik Content -->
-    <div id="grafik-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4 {% if active_submenu != 'grafik' %}hidden{% endif %}">
-      <!-- Manager-style Grafik subtabs -->
-      <div class="flex items-center justify-between mb-3">
-        <div class="flex items-center gap-2">
-          <a href="?submenu=grafik&subtab=grafik_kesehatan{% if request.GET.start_month %}&start_month={{ request.GET.start_month }}{% endif %}{% if request.GET.end_month %}&end_month={{ request.GET.end_month }}{% endif %}{% if request.GET.uid %}&uid={{ request.GET.uid }}{% endif %}"
-             class="px-3 py-1 rounded-md {% if grafik_subtab == 'grafik_kesehatan' %}bg-blue-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
-            Grafik Kesehatan
-          </a>
-          <a href="?submenu=grafik&subtab=well_unwell{% if request.GET.month %}&month={{ request.GET.month }}{% endif %}{% if request.GET.lokasi %}&lokasi={{ request.GET.lokasi }}{% endif %}"
-             class="px-3 py-1 rounded-md {% if grafik_subtab == 'well_unwell' %}bg-blue-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
-            Well & Unwell
-          </a>
+    <!-- Statistics Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-2">
+      <div class="bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-xl shadow-lg p-6">
+        <p class="text-blue-100 text-sm">Total Karyawan</p>
+        <div class="flex items-center justify-between mt-3">
+          <span class="font-semibold">{{ total_karyawan }}</span>
+          <i class="fas fa-users text-blue-200 text-2xl"></i>
         </div>
       </div>
-
-      {% if grafik_subtab == 'grafik_kesehatan' %}
-        {% include 'nurse_dashboard/grafik/grafik_kesehatan.html' %}
-      {% elif grafik_subtab == 'well_unwell' %}
-        {% include 'nurse_dashboard/grafik/well_unwell.html' %}
-      {% else %}
-        {% include 'nurse_dashboard/grafik/grafik_kesehatan.html' %}
-      {% endif %}
+      <div class="bg-gradient-to-br from-green-500 to-green-600 text-white rounded-xl shadow-lg p-6">
+        <p class="text-green-100 text-sm">Well</p>
+        <div class="flex items-center justify-between mt-3">
+          <span class="font-semibold">{{ total_well }}</span>
+          <div class="h-8 w-8 bg-green-400 text-green-900 rounded-full flex items-center justify-center">✓</div>
+        </div>
+      </div>
+      <div class="bg-gradient-to-br from-red-500 to-red-600 text-white rounded-xl shadow-lg p-6">
+        <p class="text-red-100 text-sm">Unwell</p>
+        <div class="flex items-center justify-between mt-3">
+          <span class="font-semibold">{{ total_unwell }}</span>
+          <i class="fas fa-triangle-exclamation text-red-200 text-2xl"></i>
+        </div>
+      </div>
     </div>
 
-<!-- Plotly CDN for charts -->
-<script src="https://cdn.plot.ly/plotly-2.20.0.min.js"></script>
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    // Row click navigation to employee profile
-    const rows = document.querySelectorAll('tr.dashboard-row[data-url]');
-    rows.forEach(row => {
-      row.addEventListener('click', function(e) {
-        const isInteractive = e.target.closest('a, button, input, select, textarea');
-        if (isInteractive) return;
-        const url = row.getAttribute('data-url');
-        if (url) {
-          window.location.href = url;
-        }
+    <!-- Tabs area (folder-style, sitting above main card) -->
+    <div class="flex gap-2 mb-2">
+      <a href="?submenu=data" class="px-6 py-3 rounded-t-lg transition-all font-medium {% if active_submenu == 'data' %}bg-[#0073fe] text-white shadow-md{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">DATA KARYAWAN</a>
+      <a href="?submenu=grafik" class="px-6 py-3 rounded-t-lg transition-all font-medium {% if active_submenu == 'grafik' %}bg-[#0073fe] text-white shadow-md{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">GRAFIK</a>
+    </div>
+
+    <!-- Main container card -->
+    <div class="bg-white rounded-xl shadow-xl p-6">
+
+      <!-- Data Karyawan Content -->
+      <div id="data-content" class="{% if active_submenu != 'data' %}hidden{% endif %}">
+
+        <!-- Filter Card (React-inspired) -->
+        <div class="border-2 border-gray-200 rounded-xl shadow-md bg-gradient-to-br from-white to-gray-50 mb-6">
+          <div class="flex items-center justify-between p-4">
+            <div class="flex items-center gap-3">
+              <div class="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                <i class="fas fa-filter h-5 w-5 text-[#0073fe]"></i>
+              </div>
+              <div>
+                <h3 class="font-semibold text-gray-900 flex items-center gap-2">
+                  Filter Data
+                  {% if filters.nama or filters.jabatan or filters.lokasi or filters.status or filters.expiry or filters.start_month or filters.end_month or filters.uid %}
+                    <span class="text-xs px-2 py-1 bg-[#0073fe] text-white rounded-md">3 aktif</span>
+                  {% endif %}
+                </h3>
+                <p class="text-gray-500 text-sm">Saring data karyawan sesuai kriteria</p>
+              </div>
+            </div>
+            <button class="text-gray-600 hover:text-gray-900" type="button" title="Toggle">
+              <i class="fas fa-chevron-up h-5 w-5"></i>
+            </button>
+          </div>
+
+          <hr class="border-gray-200"/>
+
+          <!-- Filters Grid -->
+          <div class="p-6 space-y-6">
+            <form method="get">
+              <input type="hidden" name="submenu" value="{{ active_submenu }}">
+
+              <!-- Periode -->
+              <div>
+                <div class="flex items-center gap-2 mb-3 text-gray-700 font-medium">
+                  <i class="fas fa-calendar h-4 w-4 text-[#0073fe]"></i> Periode
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 ml-6 mb-6">
+                  <div class="pt-4">
+                    <label class="text-sm font-medium" for="start-month">Start Month</label>
+                    <input type="month" name="start_month" id="start-month" value="{{ filters.start_month }}" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#0073fe]" />
+                  </div>
+                  <div class="pt-4">
+                    <label class="text-sm font-medium" for="end-month">End Month</label>
+                    <input type="month" name="end_month" id="end-month" value="{{ filters.end_month }}" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#0073fe]" />
+                  </div>
+                </div>
+              </div>
+
+              <hr class="border-gray-200"/>
+
+              <!-- Karyawan & Status -->
+              <div>
+                <div class="flex items-center gap-2 mb-3 text-gray-700 font-medium">
+                  <i class="fas fa-users h-4 w-4 text-[#0073fe]"></i> Karyawan & Status
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 ml-6 mb-6">
+                  <div class="pt-4">
+                    <label class="text-sm font-medium" for="uid">Karyawan</label>
+                    <select name="uid" id="uid" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#0073fe]">
+                      <option value="all" {% if filters.uid == 'all' %}selected{% endif %}>Semua Karyawan</option>
+                      {% for emp in available_employees %}
+                      <option value="{{ emp.uid }}" {% if filters.uid == emp.uid %}selected{% endif %}>{{ emp.nama }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="pt-4">
+                    <label class="text-sm font-medium" for="status">Status Kesehatan</label>
+                    <select name="status" id="status" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#0073fe]">
+                      <option value="">Semua Status</option>
+                      {% for status in available_status %}
+                      <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <hr class="border-gray-200"/>
+
+              <!-- Pencarian Detail -->
+              <div>
+                <div class="flex items-center gap-2 mb-3 text-gray-700 font-medium">
+                  <i class="fas fa-search h-4 w-4 text-[#0073fe]"></i> Pencarian Detail
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 ml-6 mb-6">
+                  <div class="pt-4">
+                    <label class="text-sm font-medium" for="nama">Nama</label>
+                    <input type="text" id="nama" name="nama" value="{{ filters.nama }}" placeholder="Cari nama..." class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#0073fe]" />
+                  </div>
+                  <div class="pt-4">
+                    <label class="text-sm font-medium" for="jabatan">Jabatan</label>
+                    <select id="jabatan" name="jabatan" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#0073fe]">
+                      <option value="">Semua Jabatan</option>
+                      {% for jabatan in available_jabatan %}
+                      <option value="{{ jabatan }}" {% if filters.jabatan == jabatan %}selected{% endif %}>{{ jabatan }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="pt-4">
+                    <label class="text-sm font-medium" for="lokasi">Lokasi</label>
+                    <select id="lokasi" name="lokasi" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#0073fe]">
+                      <option value="">Semua Lokasi</option>
+                      {% for lokasi in available_lokasi %}
+                      <option value="{{ lokasi }}" {% if filters.lokasi == lokasi %}selected{% endif %}>{{ lokasi }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <hr class="border-gray-200"/>
+
+              <!-- Peringatan / Expiry -->
+              <div>
+                <div class="flex items-center gap-2 mb-3 text-gray-700 font-medium">
+                  <i class="fas fa-triangle-exclamation h-4 w-4 text-[#0073fe]"></i> Peringatan
+                </div>
+                <div class="ml-6 mt-4 flex items-center p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <input type="checkbox" id="expiry" name="expiry" value="warning" {% if filters.expiry %}checked{% endif %} class="h-4 w-4 text-[#0073fe]">
+                  <label for="expiry" class="ml-2 text-sm text-gray-700">Tampilkan MCU yang akan expired (≤60 hari)</label>
+                </div>
+              </div>
+
+              <!-- Action Buttons -->
+              <div class="flex items-center ml-6">
+                <div class="w-full md:w-auto flex gap-2">
+                  <button type="submit" class="px-3 py-2 rounded-md bg-green-600 text-white shadow hover:bg-green-700">Terapkan</button>
+                  {% if filters.nama or filters.jabatan or filters.lokasi or filters.status or filters.expiry or filters.start_month or filters.end_month or filters.uid %}
+                  <a href="?submenu={{ active_submenu }}" class="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100">Reset</a>
+                  {% endif %}
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Data Table (scrollable container + shadow) -->
+        <div class="rounded-xl border border-gray-200 shadow-md overflow-hidden">
+          <div class="overflow-x-auto overflow-y-hidden">
+            <table class="min-w-full divide-y divide-gray-200 bg-white/80">
+              <thead class="bg-slate-100">
+              <tr>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">No</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">UID</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Nama</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Jabatan</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Lokasi</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Tanggal Lahir</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Umur</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Tanggal Checkup</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Tinggi</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Berat</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">BMI</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">BMI Category</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Lingkar Perut</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Gula Darah Puasa</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Gula Darah Sewaktu</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Cholesterol</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Asam Urat</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Tekanan Darah</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Derajat Kesehatan</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Tanggal MCU</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Expired MCU</th>
+                <th class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Status</th>
+              </tr>
+              </thead>
+              <tbody class="bg-white divide-y divide-gray-200 text-gray-700">
+              {% for employee in employees %}
+              <tr class="dashboard-row hover:bg-slate-50/60 transition-colors cursor-pointer" data-url="{% url 'nurse:karyawan_detail' employee.uid %}?submenu=data_karyawan&subtab=profile" title="Klik baris untuk membuka profil">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ forloop.counter|add:start_index }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">{{ employee.uid }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">{{ employee.nama }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">{{ employee.jabatan }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">{{ employee.lokasi }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">{{ employee.tanggal_lahir|default:"-" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">{{ employee.umur|default:"-" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">{{ employee.tanggal_checkup|default:"-" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">{{ employee.tinggi|default:"-" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">{{ employee.berat|default:"-" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">{{ employee.bmi|default:"-" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">{{ employee.bmi_category|default:"-" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">{{ employee.lingkar_perut|default:"-" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">{{ employee.gula_darah_puasa|default:"-" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">{{ employee.gula_darah_sewaktu|default:"-" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">{{ employee.cholesterol|default:"-" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">{{ employee.asam_urat|default:"-" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">{{ employee.tekanan_darah|default:"-" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  {% with dk=employee.derajat_kesehatan|default:""|upper %}
+                    {% if dk == "P1" or dk == "P2" or dk == "P3" %}
+                      <span class="text-green-600 font-semibold">{{ dk }}</span>
+                    {% elif dk == "P4" %}
+                      <span class="text-yellow-600 font-semibold">{{ dk }}</span>
+                    {% elif dk == "P5" %}
+                      <span class="text-orange-600 font-semibold">{{ dk }}</span>
+                    {% elif dk == "P6" or dk == "P7" %}
+                      <span class="text-red-600 font-semibold">{{ dk }}</span>
+                    {% elif dk %}
+                      <span class="text-gray-700 font-semibold">{{ dk }}</span>
+                    {% else %}
+                      <span class="text-gray-400 italic">-</span>
+                    {% endif %}
+                  {% endwith %}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  {% if employee.mcu_is_expired %}
+                    <span class="text-red-600 font-semibold">{{ employee.tanggal_MCU|default:"-" }}</span>
+                  {% elif employee.mcu_is_warning %}
+                    <span class="text-yellow-600 font-semibold">{{ employee.tanggal_MCU|default:"-" }}</span>
+                  {% else %}
+                    {{ employee.tanggal_MCU|default:"-" }}
+                  {% endif %}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  {% if employee.mcu_is_expired %}
+                    <span class="text-red-600 font-semibold">{{ employee.expired_MCU|default:"-" }}</span>
+                  {% elif employee.mcu_is_warning %}
+                    <span class="text-yellow-600 font-semibold">{{ employee.expired_MCU|default:"-" }}</span>
+                  {% else %}
+                    {{ employee.expired_MCU|default:"-" }}
+                  {% endif %}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  {% if employee.status == "Unwell" %}
+                    <span class="text-red-600 font-semibold">Unwell</span>
+                  {% elif employee.status == "Well" %}
+                    <span class="text-green-600 font-semibold">Well</span>
+                  {% else %}
+                    <span class="text-gray-400 italic">-</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+              </tbody>
+              </table>
+          </div>
+        </div>
+
+        <!-- Pagination -->
+        {% if total_pages > 1 %}
+        <div class="mt-6 flex justify-center">
+          <div class="flex items-center gap-2 rounded-full bg-white px-6 py-3 shadow-sm ring-1 ring-slate-200">
+            {% if current_page > 1 %}
+            <a href="?submenu={{ active_submenu }}&page={{ current_page|add:'-1' }}{% if filters.nama %}&nama={{ filters.nama }}{% endif %}{% if filters.jabatan %}&jabatan={{ filters.jabatan }}{% endif %}{% if filters.lokasi %}&lokasi={{ filters.lokasi }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.expiry %}&expiry={{ filters.expiry }}{% endif %}{% if filters.start_month %}&start_month={{ filters.start_month }}{% endif %}{% if filters.end_month %}&end_month={{ filters.end_month }}{% endif %}" class="rounded px-3 py-1 text-gray-700 hover:bg-gray-100">Sebelumnya</a>
+            {% endif %}
+            <span class="px-4 text-gray-700">Page {{ current_page }} of {{ total_pages }}</span>
+            {% if current_page < total_pages %}
+            <a href="?submenu={{ active_submenu }}&page={{ current_page|add:'1' }}{% if filters.nama %}&nama={{ filters.nama }}{% endif %}{% if filters.jabatan %}&jabatan={{ filters.jabatan }}{% endif %}{% if filters.lokasi %}&lokasi={{ filters.lokasi }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.expiry %}&expiry={{ filters.expiry }}{% endif %}{% if filters.start_month %}&start_month={{ filters.start_month }}{% endif %}{% if filters.end_month %}&end_month={{ filters.end_month }}{% endif %}" class="rounded px-3 py-1 text-gray-700 hover:bg-gray-100">Berikutnya</a>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+
+      </div>
+
+      {% if active_submenu == 'grafik' %}
+        <!-- Grafik (Vue) Mount Point: single layout without legacy subtabs -->
+        <div id="grafik-manager" class="mb-4"></div>
+      {% endif %}
+
+    </div>
+
+    {% if active_submenu == 'grafik' %}
+    {{ available_employees|json_script:"available-employees" }}
+    {{ available_lokasi|json_script:"available-lokasi" }}
+    <script>
+      try {
+        window.__AVAILABLE_EMPLOYEES__ = JSON.parse(document.getElementById('available-employees').textContent);
+      } catch (e) { /* noop */ }
+      try {
+        window.__AVAILABLE_LOKASI__ = JSON.parse(document.getElementById('available-lokasi').textContent);
+      } catch (e) { /* noop */ }
+    </script>
+    {% endif %}
+
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        // Row click navigation to employee profile
+        const rows = document.querySelectorAll('tr.dashboard-row[data-url]');
+        rows.forEach(row => {
+          row.addEventListener('click', function(e) {
+            const isInteractive = e.target.closest('a, button, input, select, textarea');
+            if (isInteractive) return;
+            const url = row.getAttribute('data-url');
+            if (url) {
+              window.location.href = url;
+            }
+          });
+        });
       });
-    });
-  });
-</script>
+    </script>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+  {% if active_submenu == 'grafik' %}
+    <!-- ApexCharts for chart rendering (load BEFORE component so charts can mount immediately) -->
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <!-- GrafikManager component (depends on Vue global and ApexCharts) -->
+    <script src="{% static 'js/components/grafik_manager.js' %}"></script>
+    <!-- Nurse alias for GrafikManager (optional) -->
+    <script src="{% static 'js/components/grafik_nurse.js' %}"></script>
+  {% endif %}
 {% endblock %}

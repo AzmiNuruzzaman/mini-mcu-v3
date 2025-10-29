@@ -2,22 +2,99 @@
 {% load static %}
 
 {% block page_content %}
-<div class="bg-white rounded-lg shadow p-6">
-  <section class="mb-6">
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <!-- Left: Controls & Export -->
+  <section class="bg-white rounded-xl shadow-sm ring-1 ring-black/5 p-6">
     {% include "nurse/partials/qr_export.html" %}
   </section>
 
-  <section>
-    <h3 class="text-lg font-semibold mb-2">Preview</h3>
-    <div class="p-4 bg-gray-50 border rounded text-center">
+  <!-- Right: Preview & Actions -->
+  <section class="bg-white rounded-xl shadow-sm ring-1 ring-black/5 p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-lg font-semibold">Preview</h3>
+      {% if selected_uid %}
+        <span class="inline-flex items-center gap-2 text-xs px-2 py-1 rounded-full bg-blue-50 text-blue-700 ring-1 ring-blue-100">
+          UID: {{ selected_uid }}
+        </span>
+      {% endif %}
+    </div>
+
+    <div class="p-4 bg-gray-50 border rounded">
       {% if qr_base64 %}
-        <h4 class="text-md font-medium mb-2">QR Code untuk {{ selected_name }}</h4>
-        <img src="data:image/png;base64,{{ qr_base64 }}" alt="QR Code" class="mx-auto mb-4" style="width: 200px; height: 200px;"/>
-        <p class="text-sm text-gray-600">Scan QR code untuk mengakses data karyawan</p>
+        <div class="text-center">
+          <h4 class="text-md font-medium mb-2">QR Code untuk {{ selected_name }}</h4>
+          <!-- Size selector -->
+          <div class="flex items-center justify-center gap-3 mb-3">
+            <label for="qrSize" class="text-sm text-gray-600">Ukuran:</label>
+            <select id="qrSize" class="border rounded-md px-2 py-1 text-sm">
+              <option value="160">Kecil</option>
+              <option value="200" selected>Sedang</option>
+              <option value="240">Besar</option>
+              <option value="280">XL</option>
+            </select>
+          </div>
+
+          <img id="qrPreviewImg" src="data:image/png;base64,{{ qr_base64 }}" alt="QR Code" class="mx-auto mb-4" style="width: 200px; height: 200px;"/>
+
+          <div class="flex flex-wrap items-center justify-center gap-2">
+            <!-- Download PNG using data URI -->
+            <a href="data:image/png;base64,{{ qr_base64 }}" download="qr_{{ selected_uid }}.png"
+               class="inline-flex items-center gap-2 px-3 py-2 rounded-md text-white bg-gray-900 hover:bg-gray-800 text-sm">
+              Unduh PNG
+            </a>
+            <!-- Copy link to clipboard -->
+            <button type="button" id="copyQrLinkBtn"
+                    class="inline-flex items-center gap-2 px-3 py-2 rounded-md text-gray-800 bg-white hover:bg-gray-100 ring-1 ring-inset ring-gray-300 text-sm">
+              Salin Tautan
+            </button>
+            <!-- Print -->
+            <button type="button" id="printQrBtn"
+                    class="inline-flex items-center gap-2 px-3 py-2 rounded-md text-white bg-blue-600 hover:bg-blue-700 text-sm">
+              Cetak
+            </button>
+          </div>
+          <p class="mt-3 text-xs text-gray-500">Scan QR code untuk mengakses data karyawan.</p>
+        </div>
       {% else %}
-        <p class="text-gray-500">Pilih karyawan untuk melihat preview QR code</p>
+        <p class="text-gray-600 text-center">Pilih karyawan untuk melihat preview QR code.</p>
       {% endif %}
     </div>
   </section>
 </div>
+
+<script>
+  (function(){
+    const sizeSel = document.getElementById('qrSize');
+    const img = document.getElementById('qrPreviewImg');
+    if (sizeSel && img) {
+      sizeSel.addEventListener('change', function(){
+        const v = parseInt(this.value, 10) || 200;
+        img.style.width = v + 'px';
+        img.style.height = v + 'px';
+      });
+    }
+
+    const copyBtn = document.getElementById('copyQrLinkBtn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', async function(){
+        try {
+          const uid = '{{ selected_uid|default:"" }}';
+          const url = `${window.location.origin}/karyawan/?uid=${uid}`;
+          await navigator.clipboard.writeText(url);
+          copyBtn.textContent = 'Disalin';
+          setTimeout(()=>{ copyBtn.textContent = 'Salin Tautan'; }, 1500);
+        } catch (e) {
+          alert('Gagal menyalin tautan.');
+        }
+      });
+    }
+
+    const printBtn = document.getElementById('printQrBtn');
+    if (printBtn) {
+      printBtn.addEventListener('click', function(){
+        window.print();
+      });
+    }
+  })();
+</script>
 {% endblock %}

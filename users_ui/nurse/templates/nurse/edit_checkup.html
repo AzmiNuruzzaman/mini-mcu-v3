@@ -5,7 +5,7 @@
 <div class="bg-white rounded-lg shadow_md p-6">
   <h2 class="text-xl font-bold mb-4">Edit Checkup</h2>
   {% if checkup %}
-  <form method="post" class="space-y-4">
+  <form method="post" id="form-section" class="space-y-4">
     {% csrf_token %}
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div>

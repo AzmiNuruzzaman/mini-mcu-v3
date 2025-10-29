@@ -23,6 +23,7 @@ from core.queries import (
     save_manual_karyawan_edits,
     get_latest_medical_checkup,
     load_checkups,
+    get_checkup_upload_history,
 )
 from core.helpers import (
     sanitize_df_for_display,
@@ -318,6 +319,8 @@ def nurse_index(request):
 
     # Get the dashboard DataFrame with combined filters and month-range logic
     df = _build_nurse_filtered_df(request)
+    # Keep a full copy for computing latest checkup display (date max)
+    df_all = df.copy() if df is not None else pd.DataFrame()
 
     # Normalize 'jabatan' to remove duplicates caused by spacing/casing differences
     if not df.empty and "jabatan" in df.columns:
@@ -532,6 +535,42 @@ def nurse_index(request):
         dept_names = dept_counts_series.index.tolist()
         dept_counts = dept_counts_series.values.tolist()
 
+    # Compute latest checkup/upload display string (match Manager behavior)
+    latest_checkup_display = None
+    latest_check_date_disp = None
+    try:
+        if 'tanggal_checkup' in df_all.columns and not df_all.empty:
+            dt_series = pd.to_datetime(df_all['tanggal_checkup'], errors='coerce')
+            dt_max = dt_series.max()
+            latest_check_date_disp = dt_max.strftime('%d/%m/%y') if pd.notnull(dt_max) else None
+    except Exception:
+        latest_check_date_disp = None
+    try:
+        hist_df = get_checkup_upload_history()
+        if hasattr(hist_df, 'empty') and not hist_df.empty:
+            latest = hist_df.iloc[0]
+            ts_val = latest.get('timestamp', None)
+            # Format timestamp as dd/mm/yy HH:MM
+            try:
+                ts_disp = ts_val.strftime('%d/%m/%y %H:%M') if pd.notnull(ts_val) else '-'
+            except Exception:
+                ts_disp = '-'
+            filename = latest.get('filename', '')
+            inserted = int(latest.get('inserted', 0))
+            skipped = int(latest.get('skipped_count', 0))
+            start_month = (filters.get('start_month') or '').strip()
+            end_month = (filters.get('end_month') or '').strip()
+            if start_month and end_month:
+                latest_checkup_display = f"Range {start_month} s/d {end_month} • {filename} • Inserted: {inserted} • Skipped: {skipped}"
+            elif latest_check_date_disp:
+                latest_checkup_display = f"{latest_check_date_disp} • {filename} • Inserted: {inserted} • Skipped: {skipped}"
+            else:
+                latest_checkup_display = f"{ts_disp} • {filename} • Inserted: {inserted} • Skipped: {skipped}"
+        else:
+            latest_checkup_display = latest_check_date_disp
+    except Exception:
+        latest_checkup_display = latest_check_date_disp
+
     context = {
         "active_submenu": active_submenu,
         "employees": employees,
@@ -553,6 +592,7 @@ def nurse_index(request):
         "checkup_counts": checkup_counts,
         "dept_names": dept_names,
         "dept_counts": dept_counts,
+        "latest_checkup_display": latest_checkup_display,
         "grafik_chart_html": merged_chart_html if merged_chart_html is not None else grafik_chart_html,
         # Added for Nurse Grafik replication
         "available_employees": available_employees,
@@ -2076,6 +2116,7 @@ def nurse_grafik_kesehatan_logic(request):
 
     return grafik_chart_html
 
+# TODO: Vue fetch target → used in grafik_kesehatan (Phase 2)
 @require_http_methods(["GET"]) 
 def well_unwell_summary_json(request):
     """
@@ -2417,18 +2458,13 @@ def nurse_grafik_kesehatan(request):
     except Exception:
         available_lokasi = []
 
-    context = {
-        'grafik_subtab': 'grafik_kesehatan',
-        'grafik_start_month': grafik_start_month,
-        'grafik_end_month': grafik_end_month,
-        'available_employees': available_employees,
-        'default_start_month': default_start_month,
-        'default_end_month': default_end_month,
-        'available_lokasi': available_lokasi,
-        'available_status': ['Well', 'Unwell'],
-        'grafik_chart_html': grafik_chart_html,
-    }
-    return render(request, 'nurse_dashboard/grafik/grafik_kesehatan.html', context)
+    # Legacy Plotly-based nurse grafik view removed.
+    # Redirect to the unified nurse dashboard using the shared GrafikManager Vue component.
+    # Preserve existing filter query params.
+    base = reverse('nurse:dashboard')
+    qs = request.META.get('QUERY_STRING', '')
+    sep = '&' if qs else ''
+    return redirect(f"{base}?submenu=grafik{sep}{qs}")
 
 @require_http_methods(["GET"]) 
 def nurse_grafik_well_unwell(request):
@@ -2455,8 +2491,9 @@ def nurse_grafik_well_unwell(request):
     # Union of both sets to ensure dropdown includes all possible lokasi values
     all_lokasi = sorted(list(employee_lokasi.union(checkup_lokasi)))
     
-    context = {
-        'grafik_subtab': 'well_unwell',
-        'available_lokasi': all_lokasi,
-    }
-    return render(request, 'nurse_dashboard/grafik/well_unwell.html', context)
+    # Legacy nurse well/unwell grafik view removed.
+    # Redirect to the unified nurse dashboard Grafik tab that uses GrafikManager.
+    base = reverse('nurse:dashboard')
+    qs = request.META.get('QUERY_STRING', '')
+    sep = '&' if qs else ''
+    return redirect(f"{base}?submenu=grafik{sep}{qs}")

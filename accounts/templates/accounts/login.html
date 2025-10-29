@@ -4,6 +4,19 @@
 <head>
     <meta charset="UTF-8">
     <title>Mini-MCU Login</title>
+    <!-- Suppress Tailwind CDN production warning while using CDN in this environment -->
+    <script>
+      (function(){
+        var origWarn = console.warn;
+        console.warn = function(){
+          var msg = arguments && arguments.length ? String(arguments[0]) : '';
+          if (msg && msg.indexOf('cdn.tailwindcss.com should not be used in production') !== -1) {
+            return; // mute Tailwind CDN production warning
+          }
+          return origWarn.apply(console, arguments);
+        };
+      })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
       /* On the login page, ensure only the intended login button is visible */

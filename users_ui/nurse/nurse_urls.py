@@ -13,6 +13,13 @@ urlpatterns = [
     path('dashboard/grafik/well_unwell/', nurse_views.nurse_grafik_well_unwell, name='nurse_grafik_well_unwell'),
     path('grafik/well_unwell/summary-json/', nurse_views.well_unwell_summary_json, name='well_unwell_summary_json'),
 
+    # ---------------- Grafik JSON API (duplicate manager endpoints under nurse prefix) ----------------
+    path('grafik/well-unwell-summary/', manager_views.well_unwell_summary_json, name='grafik_well_unwell_summary_json'),
+    path('grafik/health-metrics-summary/', manager_views.health_metrics_summary_json, name='grafik_health_metrics_summary_json'),
+    path('grafik/lokasi-list/', manager_views.lokasi_list_json, name='grafik_lokasi_list_json'),
+    path('grafik/karyawan-list/', manager_views.karyawan_list_json, name='grafik_karyawan_list_json'),
+    path('grafik/diagnostic-log/', manager_views.grafik_diagnostic_log, name='grafik_diagnostic_log'),
+
     # ---------------- Karyawan Detail / Edit ----------------
     path('karyawan/<str:uid>/', nurse_views.nurse_karyawan_detail, name='karyawan_detail'),
     path('karyawan/<str:uid>/save/', nurse_views.nurse_save_medical_checkup, name='save_checkup'),

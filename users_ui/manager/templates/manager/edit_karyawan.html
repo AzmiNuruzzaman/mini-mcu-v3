@@ -651,72 +651,64 @@
       </script>
     </div>
 
-  <!-- Grafik Content -->
-  <div id="grafik-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4 {% if active_submenu != 'grafik' %}hidden{% endif %}">
-      <h2 class="text-xl font-bold mb-3">Grafik Riwayat Medical Check Up</h2>
-      <form method="get" class="mb-4 flex items-center gap-2">
-        <input type="hidden" name="submenu" value="grafik"/>
-        {% if request.GET.uid %}
-        <input type="hidden" name="uid" value="{{ request.GET.uid }}"/>
-        {% endif %}
-        <label class="font-medium">Range Bulan:</label>
-        <input type="month" name="start_month" value="{{ grafik_start_month }}" class="border px-2 py-1 rounded">
-        <span class="mx-1">s/d</span>
-        <input type="month" name="end_month" value="{{ grafik_end_month }}" class="border px-2 py-1 rounded">
-        <button type="submit" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Terapkan</button>
-      </form>
-      {% if grafik_chart_html %}
-        <div class="w-full overflow-x-auto">
-          {{ grafik_chart_html|safe }}
-        </div>
-        <script>
-          document.addEventListener('DOMContentLoaded', function(){
-            var grafContainer = document.querySelector('#grafik-content .plotly-graph-div');
-            if (!grafContainer || typeof Plotly === 'undefined' || !Plotly.relayout) return;
-            const thresholdValues = {
-              'Gula Darah Puasa': 126,
-              'Gula Darah Sewaktu': 200,
-              'Asam Urat': 7,
-              'Cholesterol': 200,
-              'BMI': 30
-            };
-            grafContainer.on('plotly_legendclick', function(ev){
-              try {
-                var idx = ev.curveNumber;
-                var d = ev.data || (ev.fullData || []);
-                var name = (d && d[idx] && d[idx].name) ? d[idx].name : null;
-                if (!name) return true;
-                var thr = thresholdValues[name];
-                var shapes = [];
-                if (thr != null) {
-                  shapes = [{ type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y', y0: thr, y1: thr, line: { color: 'rgba(255,0,0,0.35)', width: 2, dash: 'dash' } }];
-                }
-                Plotly.relayout(grafContainer, { shapes: shapes, 'yaxis.showticklabels': true });
-                // Force immediate render to avoid needing manual resize
-                try { Plotly.redraw(grafContainer); } catch(e) {}
-                try { Plotly.Plots.resize(grafContainer); } catch(e) {}
-              } catch(e) {}
-              return true;
-            });
-            grafContainer.on('plotly_click', function(ev){
-              try {
-                var pt = ev.points && ev.points[0];
-                var name = pt && pt.data && pt.data.name;
-                var thr = thresholdValues[name];
-                if (thr == null) return;
-                var shape = { type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y', y0: thr, y1: thr, line: { color: 'rgba(255,0,0,0.35)', width: 2, dash: 'dash' } };
-                Plotly.relayout(grafContainer, { shapes: [shape], 'yaxis.showticklabels': true });
-                // Force immediate render to avoid needing manual resize
-                try { Plotly.redraw(grafContainer); } catch(e) {}
-                try { Plotly.Plots.resize(grafContainer); } catch(e) {}
-              } catch(e) {}
-            });
+  <!-- Grafik Content (rendered by Vue GrafikManager, matching dashboard/grafik exactly) -->
+  <div id="grafik-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-0 {% if active_submenu != 'grafik' %}hidden{% endif %}">
+    <!-- Vue mount point for GrafikManager -->
+    <div id="grafik-manager" class="min-h-[300px]"></div>
+    <!-- Page-specific tweaks: hide Lokasi & Karyawan selectors and preselect current employee UID -->
+    <script>
+      document.addEventListener('DOMContentLoaded', function(){
+        function hideSelectorsAndSetUID(){
+          var root = document.getElementById('grafik-manager');
+          if (!root) return;
+          // Hide Lokasi & Karyawan filter groups
+          var labels = root.querySelectorAll('label');
+          labels.forEach(function(label){
+            var txt = (label.textContent || '').trim();
+            if (txt === 'Lokasi' || txt === 'Karyawan') {
+              var grp = label.closest('div');
+              if (grp) grp.classList.add('hidden');
+            }
           });
-        </script>
-      {% else %}
-        <div class="p-4 bg-gray-50 border rounded text-gray-500">Belum ada data grafik untuk range ini.</div>
-      {% endif %}
-  </div>
+          // Preselect current employee UID to tie grafik to profile
+          // Use the current employee UID from context; avoid accessing request.GET to prevent VariableDoesNotExist
+          var selectedUID = '{{ employee.uid|default_if_none:"" }}';
+          if (selectedUID) {
+            var kSelect = null;
+            labels.forEach(function(label){
+              var txt = (label.textContent || '').trim();
+              if (txt === 'Karyawan') {
+                var grp = label.closest('div');
+                if (grp) { kSelect = grp.querySelector('select'); }
+              }
+            });
+            if (kSelect) {
+              try {
+                kSelect.value = String(selectedUID);
+                ['change','input'].forEach(function(ev){ kSelect.dispatchEvent(new Event(ev, { bubbles:true })); });
+              } catch(e) {}
+            }
+          }
+        }
+        // Poll until component filters are rendered, then apply edits
+        var tries = 0; var timer = setInterval(function(){
+          tries++;
+          var root = document.getElementById('grafik-manager');
+          if (root && root.querySelector('label')) { try { hideSelectorsAndSetUID(); } catch(e){} clearInterval(timer); }
+          if (tries > 60) { clearInterval(timer); }
+        }, 100);
+      });
+    </script>
+</div>
 
 </div>
+{% endblock %}
+
+{% block child_scripts %}
+  {% if active_submenu == 'grafik' %}
+    <!-- ApexCharts for chart rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <!-- GrafikManager component (same as dashboard/grafik) -->
+    <script src="{% static 'js/components/grafik_manager.js' %}"></script>
+  {% endif %}
 {% endblock %}

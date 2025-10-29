@@ -1,20 +1,63 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Mini MCU Manager{% endblock %}</title>
+    <!-- Suppress Tailwind CDN production warning while using CDN in this environment -->
+    <script>
+      (function(){
+        var origWarn = console.warn;
+        console.warn = function(){
+          var msg = arguments && arguments.length ? String(arguments[0]) : '';
+          if (msg && msg.indexOf('cdn.tailwindcss.com should not be used in production') !== -1) {
+            return; // mute Tailwind CDN production warning
+          }
+          return origWarn.apply(console, arguments);
+        };
+      })();
+    </script>
+    <!-- Tailwind CSS (CDN) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.2.1/flowbite.min.css" rel="stylesheet" />
+    
+    <!-- Lucide Icons (CDN UMD build) -->
+    <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+    
+    <!-- Tailwind CSS (CDN) already included; keep layout/styles intact -->
 </head>
 <body class="bg-gray-100">
     <div class="flex h-screen">
         {% block sidebar %}{% endblock %}
         <div class="flex-1 flex flex-col overflow-hidden">
-            {% block content %}{% endblock %}
+            <div id="app">
+                {% block content %}{% endblock %}
+            </div>
         </div>
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.2.1/flowbite.min.js"></script>
+    
+    <!-- Vue (CDN production build) should load BEFORE page-specific extra scripts -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    
+    <!-- Initialize Lucide icons globally (safe no-op if already initialized) -->
+    <script>
+      (function(){
+        try {
+          if (window.lucide && typeof window.lucide.createIcons === 'function') {
+            console.log('[Lucide] createIcons init (base template)');
+            window.lucide.createIcons();
+          } else {
+            console.warn('[Lucide] global not ready at base init');
+          }
+        } catch(e) { console.warn('[Lucide] init error', e); }
+      })();
+    </script>
+    
     {% block extra_scripts %}{% endblock %}
+    
+    <!-- Global App entrypoint (mounts components after they are defined) -->
+    <script src="{% static 'js/app.js' %}"></script>
 </body>
 </html>

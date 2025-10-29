@@ -1,0 +1,17 @@
+/* Placeholder CSS for future Tailwind customization extensions.
+   Phase 2 requires directory presence only; no visual changes here. */
+
+/* Intentionally empty to avoid altering current styles. */
+/* ApexCharts tooltip rounding to match square card layout aesthetics */
+.apexcharts-tooltip {
+  border-radius: 12px !important;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+}
+.apexcharts-tooltip-title {
+  border-top-left-radius: 12px !important;
+  border-top-right-radius: 12px !important;
+}
+.apexcharts-tooltip .apexcharts-tooltip-series-group {
+  padding: 6px 8px;
+}

@@ -18,31 +18,27 @@
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Suppress Tailwind CDN production warning while using CDN in this environment -->
     <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        'inter': ['Inter', 'sans-serif'],
-                    },
-                    colors: {
-                        'primary': '#0073fe',
-                        'primary-dark': '#0073fe',
-                    },
-                }
-            }
-        }
+      (function(){
+        var origWarn = console.warn;
+        console.warn = function(){
+          var msg = arguments && arguments.length ? String(arguments[0]) : '';
+          if (msg && msg.indexOf('cdn.tailwindcss.com should not be used in production') !== -1) {
+            return; // mute Tailwind CDN production warning
+          }
+          return origWarn.apply(console, arguments);
+        };
+      })();
     </script>
+    <!-- Tailwind CSS (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
     
     <!-- Font Awesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
+        body { font-family: 'Inter', sans-serif; }
         
         /* Select2 Custom Styling */
         .select2-container--default .select2-selection--single {
@@ -73,7 +69,7 @@
     <div class="flex h-screen">
         <!-- Sidebar -->
         {% if role_title or not view_only %}
-        <div id="app-sidebar" class="w-[310px] bg-primary flex-shrink-0 transition-all duration-200">
+        <div id="app-sidebar" class="w-[310px] bg-[#0073fe] text-white flex-shrink-0 transition-all duration-200 relative isolate z-10">
             {% block sidebar %}
                 {% include "shared/shared_sidebar.html" %}
             {% endblock %}
@@ -145,14 +141,19 @@
                     </div>
                 </header>
 
-                <!-- Main Content Area -->
-                <main class="flex-1 overflow-auto p-8">
-                    {% block main_content %}{% endblock %}
-                </main>
+    <!-- Main Content Area -->
+    <main class="flex-1 overflow-auto p-8">
+        <div id="app">
+            {% block main_content %}{% endblock %}
+        </div>
+    </main>
             </div>
         </div>
     </div>
 
+    <!-- Vue (CDN production build) should load BEFORE page-specific extra scripts -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    
     {% block extra_scripts %}{% endblock %}
     
     <script>
@@ -222,5 +223,8 @@
             };
         })();
     </script>
+    
+    <!-- Global App entrypoint (mounts Vue components like GrafikManager after they are defined) -->
+    <script src="{% static 'js/app.js' %}"></script>
 </body>
 </html>
