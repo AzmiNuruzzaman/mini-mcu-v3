@@ -3,6 +3,8 @@
   window.Components = window.Components || {};
   const { reactive, ref, watch, computed } = Vue;
   const MAX_SAFE_POINTS = 5000;
+  // Hard cap window to avoid rendering extremely large histories that may freeze the UI
+const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are large
   // Determine API base prefix based on current route (supports manager and nurse)
   const API_BASE = (function(){
     try {
@@ -17,6 +19,30 @@
     const m = String(d.getMonth()+1).padStart(2,'0');
     return `${y}-${m}`;
   }
+  // Convert 'YYYY-MM' or similar to short month label 'Jan', 'Feb', ...
+  function fmtMonthShortFromISO(s){
+    try{
+      if (!s || typeof s !== 'string') return s;
+      // Accept formats like 'YYYY-MM', 'YYYY/MM'
+      const parts = s.includes('-') ? s.split('-') : (s.includes('/') ? s.split('/') : []);
+      const mm = parts.length>=2 ? parts[1] : s;
+      // Indonesian short month labels
+      const map = { '01':'Jan','1':'Jan','02':'Feb','2':'Feb','03':'Mar','3':'Mar','04':'Apr','4':'Apr','05':'Mei','5':'Mei','06':'Jun','6':'Jun','07':'Jul','7':'Jul','08':'Agu','8':'Agu','09':'Sep','9':'Sep','10':'Okt','11':'Nov','12':'Des' };
+      return map[mm] || s;
+    }catch(e){ return s; }
+  }
+  // Convert 'YYYY-MM' to 'Jan 2025'
+  function fmtMonthFullFromISO(s){
+    try{
+      if (!s || typeof s !== 'string') return s;
+      const parts = s.split('-');
+      if (parts.length < 2) return s;
+      const y = parts[0];
+      const mm = parts[1];
+      const map = { '01':'Jan','1':'Jan','02':'Feb','2':'Feb','03':'Mar','3':'Mar','04':'Apr','4':'Apr','05':'Mei','5':'Mei','06':'Jun','6':'Jun','07':'Jul','7':'Jul','08':'Agu','8':'Agu','09':'Sep','9':'Sep','10':'Okt','11':'Nov','12':'Des' };
+      return `${map[mm]||mm} ${y}`;
+    }catch(e){ return s; }
+  }
 
   // Metric config for thresholds
   const METRIC_CONFIG = {
@@ -30,88 +56,58 @@
   // Expose for diagnostics
   window.MANAGER_METRIC_CONFIG = METRIC_CONFIG;
 
-  // ApexCharts wrapper
-  const ApexChart = {
-    name:'ApexChart',
-    props:{ options:Object, series:Array, height:[String,Number] },
-    template:`<div ref="el" style="width:100%"></div>`,
-    mounted(){
-      if(typeof ApexCharts==='undefined'){ console.warn('[ApexChart] ApexCharts not found'); return; }
-      try {
-        const opts = Object.assign({}, this.options || {}, {
-          series: this.series || [],
-          chart: Object.assign({}, (this.options||{}).chart || {}, { height: this.height })
-        });
-        this._chart = new ApexCharts(this.$refs.el, opts);
-        // initialize update queue to serialize ApexCharts updates
-        this._updateQueue = Promise.resolve();
-        // Defer initial render to allow UI to paint and avoid blocking
-        try { setTimeout(() => { try { this._chart.render(); } catch(err){ console.error('[Diagnostic] Chart render error', err); try { fetch(`${API_BASE}/grafik/diagnostic-log/`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ error: (err && err.message) || String(err), stage:'deferred-render' }) }); } catch(e){} } }, 0); }
-        catch(err){
-          console.error('[Diagnostic] Chart render error', err);
-          try { fetch(`${API_BASE}/grafik/diagnostic-log/`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ error: (err && err.message) || String(err) }) }); } catch(e){}
-        }
-      } catch(e) {
-        console.warn('[ApexChart] render failed', e);
+// ECharts wrapper (robust): protect against DOM races, serialize updates
+  // ECharts wrapper component
+  const EChartWrapper = {
+    name: 'EChartWrapper',
+    props: { options: Object, series: Array, height: [String, Number] },
+    template: `<div ref="el" :style="{width:'100%',height:height+'px'}"></div>`,
+    mounted() {
+      if (typeof echarts === 'undefined') {
+        console.warn('[EChartWrapper] echarts not found');
+        return;
       }
+      this.chart = echarts.init(this.$refs.el);
+      this.updateChart(true);
+      window.addEventListener('resize', this.resize);
     },
-    methods:{
-      // enqueue updates to avoid concurrent updateOptions/updateSeries calls inside ApexCharts
-      enqueueUpdate(fn){
-        this._updateQueue = (this._updateQueue || Promise.resolve()).then(() => new Promise((resolve) => {
-          Vue.nextTick(async () => { try { const r = fn && fn(); if (r && typeof r.then==='function') { await r; } } finally { resolve(); } });
+    methods: {
+      scheduleUpdate(){
+        if (this._updateScheduled) return;
+        this._updateScheduled = true;
+        requestAnimationFrame(()=>{ this._updateScheduled = false; this.updateChart(false); });
+      },
+      updateChart(initial) {
+        if (!this.options || !Array.isArray(this.series)) return;
+        const base = Object.assign({}, this.options);
+        const chartType = base.chartType || 'line';
+        base.series = this.series.map(s => ({
+          name: s.name,
+          type: chartType === 'area' ? 'line' : chartType,
+          data: s.data,
+          smooth: true,
+          connectNulls: true,
+          areaStyle: chartType === 'area' ? { opacity: 0.25 } : undefined,
+          lineStyle: { width: 3 },
+          itemStyle: { color: s.color || '#0073fe' },
+          label: chartType === 'bar' && s.name === 'Unwell' ? { show: true, position: 'top', color: (s.color || '#dc2626'), fontSize: 12 } : undefined,
+          labelLayout: chartType === 'bar' ? { hideOverlap: true } : undefined
         }));
+        // Merge updates for performance; lazy update to batch layout
+        this.chart.setOption(base, false, true);
       },
-      setType(type){
-        try{
-          if (!this._chart) return;
-          const baseChart = Object.assign({}, (this.options||{}).chart || {}, { type });
-          // serialize type change to prevent overlapping with series/options updates
-          this.enqueueUpdate(() => this._chart.updateOptions({ chart: baseChart, animations: { enabled:false } }, false, true));
-        }catch(e){ console.warn('[ApexChart] setType failed', e); }
-      }
+      resize() { if (this.chart) this.chart.resize(); }
     },
-    watch:{
-      // Throttle deep updates to avoid overlapping re-renders
-      options:{
-        deep:true,
-        handler(newVal){
-          if (!this._chart) return;
-          if (this._optsUpdatePending) return;
-          this._optsUpdatePending = true;
-          Vue.nextTick(()=>{
-            try {
-              // IMPORTANT: do not include series in updateOptions to avoid race with updateSeries
-              const merged = Object.assign({}, newVal || {});
-              this.enqueueUpdate(() => this._chart.updateOptions(merged, false, true));
-            } catch(e) { console.warn('[ApexChart] updateOptions failed', e); }
-            finally { this._optsUpdatePending = false; }
-          });
-        }
-      },
-      series:{
-        deep:true,
-        handler(newSeries){
-          if (!this._chart) return;
-          if (this._seriesUpdatePending) return;
-          this._seriesUpdatePending = true;
-          Vue.nextTick(()=>{
-            try { this.enqueueUpdate(() => this._chart.updateSeries(newSeries || [], true)); }
-            catch(e) { console.warn('[ApexChart] updateSeries failed', e); }
-            finally { this._seriesUpdatePending = false; }
-          });
-        }
-      },
-      height(val){
-        if (!this._chart) return;
-        Vue.nextTick(()=>{
-          try {
-            this.enqueueUpdate(() => this._chart.updateOptions({ chart: Object.assign({}, (this.options||{}).chart || {}, { height: val }) }, false, true));
-          } catch(e) { console.warn('[ApexChart] update height failed', e); }
-        });
-      }
+    watch: {
+      options: { deep: false, handler() { this.scheduleUpdate(); } },
+      series: { deep: false, handler() { this.scheduleUpdate(); } },
+      // React specifically to chartType changes inside options so toggling type is seamless
+      'options.chartType': function(){ this.scheduleUpdate(); }
     },
-    unmounted(){ this._chart?.destroy(); this._chart=null; }
+    unmounted() {
+      window.removeEventListener('resize', this.resize);
+      if (this.chart) this.chart.dispose();
+    }
   };
 
   // Chart type toggle (icons + text)
@@ -141,26 +137,89 @@
 
   const GrafikManager = {
     name:'GrafikManager',
-    components:{ ApexChart, ChartTypeToggle },
+    components:{ EChartWrapper, ChartTypeToggle },
     data(){
       return {
         tab:'health', // 'health' | 'well'
-        filters:{ start_month:'', end_month:'', lokasi:'', karyawan_uid:'' },
+        // Allow hiding the Well/Unwell tab in profile contexts (Edit Master Data → Grafik)
+        showWellTab: true,
+        // Option to hide only Karyawan selector while keeping Parameter/Month filters visible
+        hideKaryawanSelect: false,
+        // Filters: select month range and a single karyawan; parameter optional
+        // Default parameter set to 'Semua' to include all metrics by default
+        filters:{ start_month:'', end_month:'', karyawan_uid:'', parameter:'Semua' },
         // Allow pages to hide filters area (e.g., nurse profile context)
         showSelectors: true,
-        chartType:'bar',
+        chartType:'area',
         activeMetric:null,
         metricsList:['Gula Darah Puasa','Gula Darah Sewaktu','Tekanan Darah','Cholesterol','Asam Urat'],
         // Card model for Health Metrics (rendered above the chart)
         healthMetrics:[],
-        lokasiList:[],
+        // lokasi filter removed per request
         karyawanList:[],
-        // Initialize charts as null to avoid rendering ApexCharts with empty config
+        // Initialize charts as null to avoid rendering ECharts with empty config
         chartSeries:[],
         chartOptions:null,
         wellUnwellSeries:[],
-        wellUnwellOptions:null
+        wellUnwellOptions:null,
+        // Health tab (overhauled): show exceedance counts per month for selected employee
+        healthExceedSeries: [],
+        healthExceedOptions: null,
+        // Details table for Health tab: parameters exceeding thresholds per month
+        healthExceedDetails: [],
+        healthExceedTablePage: 1,
+        healthExceedPageSize: 12,
+        // Render guard: whether selected karyawan has medical data for the chosen window
+        healthHasData: false,
+        // No remount keys needed
+        // Cached datasets for safe re-render lifecycle without refetch
+        cachedUnwellData: null,
+        // Small summary block: total Unwell in current window
+        totalUnwellWindow: 0,
+        // Details table (Unwell list per month)
+        wellUnwellDetails: [],
+        wellUnwellTablePage: 1,
+        wellUnwellPageSize: 12, // Show all 12 months
+        // Rendering lifecycle guard
+        isRenderingChart: false,
+        _chartTypeTimer: null,
+        // Fetch control to avoid overlapping requests that can freeze UI
+        _fetching: false,
+        _wellAbortCtrl: null,
+        _healthAbortCtrl: null,
+        // Simple cache keys to bypass redundant network calls when filters unchanged
+        _lastHealthKey: '',
+        _lastWellKey: ''
       };
+    },
+    computed:{
+      wellTableRows(){
+        try{
+          const total = Array.isArray(this.wellUnwellDetails) ? this.wellUnwellDetails.length : 0;
+          const size = Number(this.wellUnwellPageSize) || 5;
+          const page = Number(this.wellUnwellTablePage) || 1;
+          const start = Math.max(0, (page - 1) * size);
+          const end = Math.min(total, start + size);
+          return Array.isArray(this.wellUnwellDetails) ? this.wellUnwellDetails.slice(start, end) : [];
+        }catch(e){ return []; }
+      },
+      healthTableRows(){
+        try{
+          const total = Array.isArray(this.healthExceedDetails) ? this.healthExceedDetails.length : 0;
+          const size = Number(this.healthExceedPageSize) || 12;
+          const page = Number(this.healthExceedTablePage) || 1;
+          const start = Math.max(0, (page - 1) * size);
+          const end = Math.min(total, start + size);
+          return Array.isArray(this.healthExceedDetails) ? this.healthExceedDetails.slice(start, end) : [];
+        }catch(e){ return []; }
+      },
+      selectedEmployee(){
+        try{
+          const uid = String(this.filters.karyawan_uid||'');
+          if (!uid) return null;
+          return (this.karyawanList||[]).find(k=>String(k.uid)===uid) || null;
+        }catch(e){ return null; }
+      }
     },
     async mounted(){
       try {
@@ -169,15 +228,21 @@
         if (rootEl && rootEl.dataset) {
           const preUid = rootEl.dataset.preselectUid || '';
           const hideSel = rootEl.dataset.hideSelectors === 'true';
+          const hideUnwell = rootEl.dataset.hideUnwell === 'true';
+          const hideKSelect = rootEl.dataset.hideKaryawanSelect === 'true';
           if (preUid) { this.filters.karyawan_uid = String(preUid); }
           if (hideSel) { this.showSelectors = false; }
+          if (hideUnwell) { this.showWellTab = false; this.tab = 'health'; }
+          if (hideKSelect) { this.hideKaryawanSelect = true; }
         }
         this.applyDefaultFilters();
         // Seed healthMetrics card model from metricsList
         this.buildHealthMetricsModel();
-        // Fetch sequentially to avoid overlapping work on initial render
-        await this.fetchLokasiList();
-        await this.fetchKaryawanList();
+        // Fetch lokasi and karyawan first to ensure selected karyawan is set,
+        // then fetch data so Health tab shows data for the selected karyawan (not aggregated all employees)
+        await Promise.all([
+          this.fetchKaryawanList()
+        ]);
         await this.fetchData();
         // Hide legacy Plotly fallback (if present) after Vue chart is ready
         try { const legacy = document.getElementById('grafik-legacy'); if (legacy) legacy.classList.add('hidden'); } catch(e){}
@@ -200,19 +265,55 @@
           document.head.appendChild(s);
         }
       } catch(e) { /* noop */ }
-      // Diagnostics: check ApexCharts DOM after initial render
+      // Diagnostics: check ECharts canvas after initial render
       setTimeout(()=>{
         try{
-          const el = document.querySelector('#grafik-manager .apexcharts-canvas');
-          console.log('[Diag] ApexCharts canvas present?', !!el, el);
-        }catch(e){ console.warn('[Diag] ApexCharts DOM check failed', e); }
+          const el = document.querySelector('#grafik-manager .echarts');
+          console.log('[Diag] ECharts canvas present?', !!el, el);
+        }catch(e){ console.warn('[Diag] ECharts DOM check failed', e); }
       }, 800);
     },
     watch:{
-      chartType(){ this.updateChartType(); },
-      activeMetric(){ this.updateMetricOpacity(); }
+      // Debounced chart type change watcher using cached data only
+      chartType:{
+        handler(newType, oldType){
+          try { console.log(`[Diag] Chart type changed: ${newType} tab: ${this.tab} prev: ${oldType}`); } catch(e){}
+          clearTimeout(this._chartTypeTimer);
+          // Use a short debounce to batch rapid toggles
+          this._chartTypeTimer = setTimeout(() => {
+            try {
+              // Do NOT refetch or remount; just adjust chart type and options
+              this.updateChartType(newType, oldType);
+            } catch(e) {
+              console.warn('[Diag] updateChartType failed in watcher', e);
+            }
+          }, 120);
+        },
+        flush: 'post'
+      },
+      activeMetric(){ this.updateMetricOpacity(); },
+      'filters.parameter'(){
+        // Shared layout: reflect selected parameter as active metric on Well tab
+        if (this.tab==='well'){
+          this.activeMetric = this.filters.parameter;
+          this.updateMetricOpacity();
+        }
+      }
     },
     methods:{
+      async destroyChartSafe(){
+        try {
+          const refComp = this.tab === 'well' ? this.$refs.wellChart : this.$refs.healthChart;
+          if (refComp && refComp.chart && typeof refComp.chart.dispose === 'function') {
+            try {
+              await new Promise(r => setTimeout(r, 50));
+              refComp.chart.dispose();
+              refComp.chart = null;
+              console.log('[Diag] ECharts chart disposed safely');
+            } catch(e) { console.warn('[Diag] ECharts chart dispose failed', e); }
+          }
+        } catch(e) { /* noop */ }
+      },
       // Build initial card entries based on metricsList
       buildHealthMetricsModel(){
         try{
@@ -305,14 +406,7 @@
           this.filters.start_month=fmtMonthISO(past);
           this.filters.end_month=fmtMonthISO(now);
         }
-        this.filters.lokasi='';
-      },
-      async fetchLokasiList(){
-        try{
-          const res = await fetch(`${API_BASE}/grafik/lokasi-list/`,{ headers:{'Accept':'application/json'}});
-          const json = await res.json();
-          this.lokasiList = Array.isArray(json)? json: (json.lokasi||[]);
-        }catch(e){ this.lokasiList = []; }
+        // lokasi filter removed
       },
       async fetchKaryawanList(){
         try{
@@ -320,24 +414,71 @@
           const json = await res.json();
           const arr = Array.isArray(json) ? json : (json.karyawan||[]);
           // Normalize shape to {uid,nama}
-          this.karyawanList = arr.map(x=>({ uid: String(x.uid||''), nama: x.nama||String(x.name||'') })).filter(x=>x.uid && x.nama);
+          this.karyawanList = arr.map(x=>({ uid: String(x.uid||''), nama: x.nama||String(x.name||''), lokasi: (x.lokasi!=null? String(x.lokasi): '') })).filter(x=>x.uid && x.nama);
+          // Auto-select first karyawan for Health tab if none selected
+          if (this.tab === 'health' && (!this.filters.karyawan_uid || this.filters.karyawan_uid === '')){
+            const first = this.karyawanList[0];
+            if (first && first.uid) {
+              this.filters.karyawan_uid = first.uid;
+              console.log('[Diag] Auto-selected first karyawan for Health tab:', first);
+            }
+          }
         }catch(e){ this.karyawanList = []; }
       },
       async fetchData(){
+        // Guard against concurrent fetches
+        if (this._fetching) {
+          // Best-effort: abort previous in-flight request if any
+          try { if (this.tab==='health' && this._healthAbortCtrl) this._healthAbortCtrl.abort(); else if (this.tab==='well' && this._wellAbortCtrl) this._wellAbortCtrl.abort(); } catch(e){}
+        }
+        this._fetching = true;
         const params = new URLSearchParams({
           month_from:this.filters.start_month||'',
           month_to:this.filters.end_month||'',
-          lokasi:this.filters.lokasi||'',
           uid:this.filters.karyawan_uid||''
         });
+        // Compute a simple cache key
+        const baseKey = `${this.filters.start_month}|${this.filters.end_month}|${this.filters.karyawan_uid}`;
         try{
-          if(this.tab==='health'){ await this.fetchHealthMetrics(params); }
-          else{ await this.fetchWellUnwellSummary(params); }
+          if(this.tab==='health'){
+            // If no karyawan selected, do not fetch; mark as no data for health tab
+            if (!this.filters.karyawan_uid) {
+              this.healthExceedSeries = [];
+              this.healthExceedOptions = null;
+              this.healthExceedDetails = [];
+              this.totalUnwellWindow = 0;
+              this.healthHasData = false;
+              return;
+            }
+            const key = `H|${baseKey}`;
+            // If we already have raw data for these filters, reuse without refetch
+            if (this._lastHealthKey === key && this._healthRaw) {
+              this.prepareHealthExceedChart(this._healthRaw);
+            } else {
+              await this.fetchHealthMetrics(params);
+              this._lastHealthKey = key;
+            }
+          } else {
+            // Well/Unwell grafik respects parameter filter (including "Semua")
+            const p = (this.filters.parameter || '').trim();
+            if (p) params.set('parameter', p);
+            const key = `W|${baseKey}|${p}`;
+            if (this._lastWellKey === key && this.cachedUnwellData) {
+              this.prepareWellUnwellChart(this.cachedUnwellData);
+            } else {
+              await this.fetchWellUnwellSummary(params);
+              this._lastWellKey = key;
+            }
+          }
         }catch(e){ console.warn('[GrafikManager] fetch failed',e); }
+        finally { this._fetching = false; }
       },
       async fetchHealthMetrics(params){
         try{
-          const res = await fetch(`${API_BASE}/grafik/health-metrics-summary/?${params.toString()}`,{ headers:{'Accept':'application/json'}});
+          // Abort any previous health fetch to prevent overlapping updates
+          try { if (this._healthAbortCtrl) this._healthAbortCtrl.abort(); } catch(e){}
+          this._healthAbortCtrl = new AbortController();
+          const res = await fetch(`${API_BASE}/grafik/health-metrics-summary/?${params.toString()}`,{ headers:{'Accept':'application/json'}, signal: this._healthAbortCtrl.signal });
           if(!res.ok) throw new Error(`HTTP ${res.status}`);
           const data = await res.json();
           const xLen=(data.x_dates||[]).length; const keys=Object.keys(data.series||{});
@@ -348,35 +489,212 @@
             if (Array.isArray(arr)) arr.forEach(v=>{ if (v == null) nulls++; else if (typeof v !== 'number') nonNums++; });
           });
           console.log('[Diagnostic] grafik_manager init', { filters:this.filters, dataLength:{ well:0, unwell:0 }, xDatesLength:xLen, seriesKeys:keys, nullCount:nulls, nonNumericCount:nonNums });
-          this.sendDiagnosticLog({ filters:{ month_from:this.filters.start_month, month_to:this.filters.end_month, lokasi:this.filters.lokasi, uid:this.filters.karyawan_uid }, xDatesLength:xLen, seriesKeys:keys, nullCount:nulls, nonNumericCount:nonNums });
-          // Render gating to avoid freeze on very large datasets
+          this.sendDiagnosticLog({ filters:{ month_from:this.filters.start_month, month_to:this.filters.end_month, uid:this.filters.karyawan_uid }, xDatesLength:xLen, seriesKeys:keys, nullCount:nulls, nonNumericCount:nonNums });
+          // Render gating: if dataset is huge, we will still render but downscale to a safe window
           const maxSeriesLen = keys.reduce((mx,k)=>{ const arr = (data.series||{})[k]||[]; return Math.max(mx, Array.isArray(arr)?arr.length:0); }, 0);
-          if (xLen < MAX_SAFE_POINTS && maxSeriesLen < MAX_SAFE_POINTS) {
-            this.prepareHealthChart(data);
-          } else {
-            console.warn('[Diagnostic] Chart data too large for Health Metrics, skipping render', { xLen, maxSeriesLen });
-            // Keep placeholder visible; do not render chart options
-            this.chartOptions = null;
-            this.chartSeries = [];
+          if (xLen >= MAX_SAFE_POINTS || maxSeriesLen >= MAX_SAFE_POINTS) {
+            console.warn('[Diagnostic] Chart data very large for Health Metrics, downscaling to last window', { xLen, maxSeriesLen, window: SAFE_WINDOW_MONTHS });
           }
-        }catch(e){ console.warn('[GrafikManager] health metrics unavailable',e); }
+          this.prepareHealthExceedChart(data);
+          // Prefetch the well/unwell dataset in the background so switching tabs is instant
+          try {
+            if (!this.cachedUnwellData) {
+              const p = new URLSearchParams(params.toString());
+              setTimeout(() => { this.fetchWellUnwellSummary(p).catch(()=>{}); }, 10);
+            }
+          } catch(e) { /* noop */ }
+        }catch(e){
+          if (e && e.name === 'AbortError') { console.warn('[GrafikManager] health metrics fetch aborted'); return; }
+          console.warn('[GrafikManager] health metrics unavailable',e);
+        }
+      },
+      // New: Prepare Health tab chart as exceedance counts per month for selected employee
+      prepareHealthExceedChart(data){
+        // Guard: need x_dates and series
+        if (!data || (!Array.isArray(data.x_dates) || !(data.series && Object.keys(data.series||{}).length))) {
+          console.warn('[Diag] prepareHealthExceedChart skipped — no data');
+          this.healthHasData = false;
+          this.healthExceedSeries = [];
+          this.healthExceedOptions = null;
+          this.healthExceedDetails = [];
+          this.totalUnwellWindow = 0;
+          return;
+        }
+        // Persist raw
+        this._healthRaw = data;
+        const raw = data.series || {};
+        // Apply explicit month range filtering similar to Grafik Unwell
+        let xDates = Array.isArray(data.x_dates) ? data.x_dates.slice() : [];
+        const startIso = String(this.filters.start_month || '');
+        const endIso = String(this.filters.end_month || '');
+        const hasRange = !!(startIso && endIso);
+        let idxs = xDates.map((_, i) => i);
+        if (hasRange) {
+          try {
+            idxs = xDates.reduce((acc, iso, i) => { if (iso >= startIso && iso <= endIso) acc.push(i); return acc; }, []);
+          } catch(e) { /* noop */ }
+        }
+        // Months returned by backend within selected range
+        const xDatesFiltered = idxs.map(i => xDates[i]);
+        // Build a complete month axis for the selected range (fill missing months with zeros)
+        function enumerateMonthsISO(startIso, endIso){
+          try{
+            if (!startIso || !endIso) return [];
+            const start = new Date(`${startIso}-01`);
+            const end = new Date(`${endIso}-01`);
+            if (isNaN(start) || isNaN(end) || start > end) return [];
+            const out=[]; const cur=new Date(start.getTime());
+            while(cur <= end){ out.push(fmtMonthISO(cur)); cur.setMonth(cur.getMonth()+1); }
+            return out;
+          }catch(e){ return []; }
+        }
+        const fullMonthsIso = hasRange ? enumerateMonthsISO(startIso, endIso) : xDatesFiltered.slice();
+        // If month range specified but computed full list is empty, show no data
+        if (hasRange && fullMonthsIso.length === 0) {
+          console.warn('[Diag] Health: invalid month range — empty axis');
+          this.healthHasData = false;
+          this.healthExceedSeries = [];
+          this.healthExceedOptions = null;
+          this.healthExceedDetails = [];
+          this.totalUnwellWindow = 0;
+          return;
+        }
+        // Build per-metric arrays and filter them by idxs
+        const seriesByMetricRaw = Object.fromEntries(this.metricsList.map(name => [name, Array.isArray(raw[name]) ? raw[name] : []]));
+        const seriesByMetric = Object.fromEntries(Object.keys(seriesByMetricRaw).map(name => [name, idxs.map(i => seriesByMetricRaw[name][i])]));
+        // Build per-month exceedance counts
+        const monthsShort = (fullMonthsIso || []).map(fmtMonthShortFromISO);
+        const metrics = this.filters && this.filters.parameter && this.filters.parameter !== 'Semua' ? [this.filters.parameter] : this.metricsList.slice();
+        // Detect if selected karyawan has any medical data (any finite number present)
+        let hasAnyValue = false;
+        try {
+          for (const name of this.metricsList) {
+            const arr = seriesByMetric[name] || [];
+            if (arr.some(v => Number.isFinite(typeof v === 'number' ? v : Number(v)))) { hasAnyValue = true; break; }
+          }
+        } catch(e) {}
+        if (!hasAnyValue) {
+          this.healthHasData = false;
+          this.healthExceedSeries = [];
+          this.healthExceedOptions = null;
+          this.healthExceedDetails = [];
+          this.totalUnwellWindow = 0;
+          console.log('[Diag] No medical data for selected karyawan');
+          return;
+        }
+        // Map month ISO to index in filtered arrays
+        const monthToIdx = Object.fromEntries(xDatesFiltered.map((iso, i) => [iso, i]));
+        const counts = fullMonthsIso.map((mIso) => {
+          const idx = monthToIdx[mIso];
+          if (idx == null) return 0;
+          let c = 0;
+          for (const name of metrics) {
+            const cfg = METRIC_CONFIG[name];
+            const arr = seriesByMetric[name] || [];
+            const val = arr[idx];
+            if (!cfg) continue;
+            const num = typeof val === 'number' ? val : Number(val);
+            if (Number.isFinite(num) && num >= cfg.threshold) c++;
+          }
+          return c;
+        });
+        // Limit window size
+        let monthsWin = monthsShort.slice();
+        let countsWin = counts.slice();
+        if (monthsWin.length > SAFE_WINDOW_MONTHS) {
+          const start = monthsWin.length - SAFE_WINDOW_MONTHS;
+          monthsWin = monthsWin.slice(start);
+          countsWin = countsWin.slice(start);
+        }
+        // Y-axis scaling similar to Unwell chart
+        const maxVal = countsWin.length ? Math.max(...countsWin) : 0;
+        const niceMax = (function(m){
+          if (m <= 5) return 5;
+          if (m <= 10) return 10;
+          if (m <= 20) return 20;
+          if (m <= 50) return 50;
+          if (m <= 100) return 100;
+          return Math.ceil(m / 50) * 50;
+        })(maxVal);
+        const tickAmt = niceMax <= 10 ? niceMax : (niceMax <= 50 ? 10 : 10);
+        // Prepare ECharts series/options — use 'Unwell' name to reuse label styling
+        const strokeColor = '#ef4444';
+        this.healthExceedSeries = [{ name: 'Unwell', data: countsWin, color: strokeColor }];
+        this.healthExceedOptions = {
+          chartType: this.chartType,
+          tooltip: { trigger: 'axis' },
+          legend: { top: 10 },
+          grid: { left: 40, right: 20, bottom: 40, top: 40 },
+          xAxis: { type: 'category', data: monthsWin },
+          yAxis: { type: 'value', min: 0, max: niceMax, splitNumber: tickAmt, splitLine: { lineStyle: { color: '#e5e7eb' } } },
+          color: [strokeColor]
+        };
+        // Build Health details table: parameters exceeding thresholds per month for selected employee
+        try {
+          this.healthExceedDetails = (fullMonthsIso || []).map((mIso) => {
+            const idx = monthToIdx[mIso];
+            if (idx == null) {
+              return { month: mIso, parameters: [] };
+            }
+            const exceeded = this.metricsList.map(name => {
+              const cfg = METRIC_CONFIG[name];
+              const arr = seriesByMetric[name] || [];
+              const val = arr[idx];
+              const num = typeof val === 'number' ? val : Number(val);
+              const isExceed = cfg && Number.isFinite(num) && num >= cfg.threshold;
+              return isExceed ? { name, value: num } : null;
+            }).filter(Boolean);
+            const filtered = (this.filters && this.filters.parameter && this.filters.parameter !== 'Semua') ? exceeded.filter(x => x.name === this.filters.parameter) : exceeded;
+            return { month: mIso, parameters: filtered };
+          });
+          // Reset table page and cap display via computed to max 12 rows
+          this.healthExceedTablePage = 1;
+        } catch(e) { this.healthExceedDetails = []; }
+        // Total Unwell window: sum counts
+        try { this.totalUnwellWindow = countsWin.reduce((acc, v) => acc + (Number.isFinite(v) ? v : 0), 0); } catch(e) { this.totalUnwellWindow = 0; }
+        console.log('[Diag] Health exceedance chart prepared', { months: monthsWin.length, countsMax: maxVal, selectedParam: this.filters.parameter });
+        this.healthHasData = true;
       },
       async fetchWellUnwellSummary(params){
-        const res = await fetch(`${API_BASE}/grafik/well-unwell-summary/?${params.toString()}`,{ headers:{'Accept':'application/json'}});
-        const data = await res.json();
+        try{
+          // Abort any previous well/unwell fetch to prevent overlapping updates
+          try { if (this._wellAbortCtrl) this._wellAbortCtrl.abort(); } catch(e){}
+          this._wellAbortCtrl = new AbortController();
+          const res = await fetch(`${API_BASE}/grafik/well-unwell-summary/?${params.toString()}`,{ headers:{'Accept':'application/json'}, signal: this._wellAbortCtrl.signal });
+          const data = await res.json();
         const months_len=(data.months||[]).length, well_len=(data.well_counts||[]).length, unwell_len=(data.unwell_counts||[]).length;
         console.log('[Diagnostic] grafik_manager init', { filters:this.filters, dataLength:{ well:well_len, unwell:unwell_len } });
-        this.sendDiagnosticLog({ filters:{ month_from:this.filters.start_month, month_to:this.filters.end_month, lokasi:this.filters.lokasi, uid:this.filters.karyawan_uid }, wellDataLength:well_len, unwellDataLength:unwell_len });
-        if (well_len < MAX_SAFE_POINTS && unwell_len < MAX_SAFE_POINTS) {
-          this.prepareWellUnwellChart(data);
-        } else {
-          console.warn('[Diagnostic] Chart data too large for Well/Unwell, skipping render', { well_len, unwell_len });
-          this.wellUnwellOptions = null;
-          this.wellUnwellSeries = [];
+        this.sendDiagnosticLog({ filters:{ month_from:this.filters.start_month, month_to:this.filters.end_month, uid:this.filters.karyawan_uid }, wellDataLength:well_len, unwellDataLength:unwell_len });
+        if (well_len >= MAX_SAFE_POINTS || unwell_len >= MAX_SAFE_POINTS) {
+          console.warn('[Diagnostic] Chart data very large for Well/Unwell, downscaling to last window', { well_len, unwell_len, window: SAFE_WINDOW_MONTHS });
+        }
+        this.prepareWellUnwellChart(data);
+        // Store details for table and reset paginator
+        this.wellUnwellDetails = Array.isArray(data.unwell_by_month) ? data.unwell_by_month : [];
+        this.wellUnwellTablePage = 1;
+        // Prefetch health metrics in the background so switching tabs is instant
+        try {
+          if (!this._healthRaw) {
+            const p = new URLSearchParams(params.toString());
+            setTimeout(() => { this.fetchHealthMetrics(p).catch(()=>{}); }, 10);
+          }
+        } catch(e) { /* noop */ }
+        }catch(e){
+          if (e && e.name === 'AbortError') { console.warn('[GrafikManager] well/unwell fetch aborted'); return; }
+          console.warn('[GrafikManager] well/unwell fetch failed', e);
         }
       },
       prepareHealthChart(data){
-        const xDates = Array.isArray(data.x_dates) ? data.x_dates : [];
+        // Guard: skip building when no data present
+        if (!data || (!Array.isArray(data.x_dates) && !(data.series && Object.keys(data.series||{}).length))) {
+          console.warn('[Diag] prepareHealthChart skipped — no data');
+          return;
+        }
+        // Persist raw for type toggles
+        this._healthRaw = data;
+        // Also cache the last dataset for quick re-renders without refetching
+        this.chartData = data;
+        let xDates = Array.isArray(data.x_dates) ? data.x_dates.slice() : [];
         const raw = data.series || {};
         // Backend already returns series keyed by human-readable labels
         // Ensure null-safe arrays by reading using those labels directly
@@ -395,9 +713,13 @@
           // pad with nulls to align
           return a.concat(Array(Math.max(0, len - a.length)).fill(null));
         }
+        // Limit to a safe window (last N months) to avoid overload
+        if (xDates.length > SAFE_WINDOW_MONTHS) {
+          xDates = xDates.slice(xDates.length - SAFE_WINDOW_MONTHS);
+        }
         // Build color mapping from METRIC_CONFIG to ensure specific colors per metric
         const METRIC_COLORS_MAP = Object.assign({}, ...this.metricsList.map((name)=>({ [name]: (METRIC_CONFIG[name] && METRIC_CONFIG[name].color) ? METRIC_CONFIG[name].color : '#0073fe' })));
-        // Build entries from metricsList using the labeled keys present in raw; include all metrics like before
+        // Build entries from metricsList using the labeled keys present in raw; include all metrics like before, aligned to limited xDates
         const entries = this.metricsList.map(name => [name, normalizeLen((Array.isArray(raw[name]) ? raw[name] : (map[name]||[])), xDates.length)]);
         // Calculate total non-null points to decide rendering
         const totalPoints = entries.reduce((acc,[,_vals])=> acc + _vals.filter(v => v != null && typeof v === 'number' && !Number.isNaN(v)).length, 0);
@@ -407,38 +729,30 @@
           this.chartOptions = null;
           console.warn('[Diagnostic] grafik-manager | no health data to render charts', { xLen: xDates.length });
           this.sendDiagnosticLog({
-            filters: { month_from: this.filters.start_month, month_to: this.filters.end_month, lokasi: this.filters.lokasi, uid: this.filters.karyawan_uid },
+            filters: { month_from: this.filters.start_month, month_to: this.filters.end_month, uid: this.filters.karyawan_uid },
             note: 'no-health-data-render-skip',
             xDatesLength: xDates.length,
             seriesKeys: Object.keys(raw || {}),
           });
           return;
         }
-        // Initialize chart series (all metrics) and options
-        this.chartSeries = entries.map(([name,values],idx)=>({
+        // Build series/options for standard types only
+        // Initialize chart series (all metrics) for ECharts wrapper
+        this.chartSeries = entries.map(([name,values])=>({
           name,
           data: values,
           color: METRIC_COLORS_MAP[name] || '#0073fe',
           opacity: 1
         }));
-        this.chartOptions={
-          chart:{ type:this.chartType, toolbar:{show:false} },
-          xaxis:{ categories:xDates },
-          stroke:{ width:2, curve:'smooth' },
-          colors:entries.map(([name])=> METRIC_COLORS_MAP[name] || '#0073fe'),
-          legend:{ position:'top' },
-          grid:{ borderColor:'#e5e7eb' },
-          tooltip:{ theme:'light' },
-          // Reduce animation overhead for smoother initial render
-          animations: { enabled: false },
-          annotations:{
-            yaxis:[{
-              y:METRIC_CONFIG['Gula Darah Puasa'].threshold,
-              borderColor:METRIC_CONFIG['Gula Darah Puasa'].color,
-              strokeDashArray:5,
-              label:{ text:METRIC_CONFIG['Gula Darah Puasa'].label, style:{ color:'#fff', background:METRIC_CONFIG['Gula Darah Puasa'].color } }
-            }]
-          }
+        // ECharts-style options
+        this.chartOptions = {
+          chartType: this.chartType,
+          tooltip: { trigger: 'axis' },
+          legend: { top: 10 },
+          grid: { left: 40, right: 20, bottom: 40, top: 40 },
+          xAxis: { type: 'category', data: xDates },
+          yAxis: { type: 'value', splitLine: { lineStyle: { color: '#e5e7eb' } } },
+          color: entries.map(([name]) => METRIC_COLORS_MAP[name] || '#0073fe')
         };
         // Default active metric
         this.activeMetric = this.activeMetric || 'Gula Darah Puasa';
@@ -457,32 +771,84 @@
         this.updateMetricOpacity();
       },
       prepareWellUnwellChart(data){
+        // Guard: skip building when no data present
+        if (!data || (!Array.isArray(data.months) && !Array.isArray(data.unwell_counts))) {
+          console.warn('[Diag] prepareWellUnwellChart skipped — no data');
+          return;
+        }
+        // Core data: only Unwell counts per month
         const months = data.months || [];
-        // Null-safe defaults for well/unwell
-        const wellDataSafe = Array.isArray(data.well_counts) ? data.well_counts : [];
-        const unwellDataSafe = Array.isArray(data.unwell_counts) ? data.unwell_counts : [];
-        // Conditional render: only render if there is data
-        if (wellDataSafe.length || unwellDataSafe.length) {
-          this.wellUnwellSeries = [
-            { name: 'Well', data: wellDataSafe },
-            { name: 'Unwell', data: unwellDataSafe }
-          ];
+        const unwellData = Array.isArray(data.unwell_counts) ? data.unwell_counts : [];
+        // Persist raw for type toggles — only unwell
+        this._wellRaw = { months, unwell: unwellData };
+        // Cache the last dataset for quick re-renders without refetching
+        this.chartData = { months, unwell_counts: unwellData };
+        this.cachedUnwellData = { months, unwell_counts: unwellData };
+        // Render only when months exist
+        if ((months || []).length) {
+          const strokeColor = '#ef4444';
+          const gradientFrom = 0.3;
+          const gradientTo = 0.0;
+          let monthsShort = (months || []).map(fmtMonthShortFromISO);
+          // Normalize series length to months and fill missing with 0 (ensure numeric)
+          let seriesData = (function(arr, len){
+            const a = Array.isArray(arr) ? arr.slice() : [];
+            if (a.length < len) {
+              // pad with zeros
+              const pad = Array(len - a.length).fill(0);
+              return a.concat(pad);
+            }
+            if (a.length > len) return a.slice(0, len);
+            // convert values to numbers; replace invalid with 0
+            return a.map(v => {
+              const n = Number(v);
+              return Number.isFinite(n) ? n : 0;
+            });
+          })(unwellData, monthsShort.length);
+          // Limit to a safe window (last N months)
+          if (monthsShort.length > SAFE_WINDOW_MONTHS) {
+            const keep = SAFE_WINDOW_MONTHS;
+            const start = monthsShort.length - keep;
+            monthsShort = monthsShort.slice(start);
+            seriesData = seriesData.slice(seriesData.length - keep);
+          }
+          // Total Unwell within current window
+          try { this.totalUnwellWindow = (seriesData || []).reduce((acc, v) => acc + (typeof v === 'number' && !Number.isNaN(v) ? v : 0), 0); } catch(e) { this.totalUnwellWindow = 0; }
+          // Y-axis scaling
+          const values = seriesData.filter(v => typeof v === 'number' && !Number.isNaN(v));
+          const maxVal = values.length ? Math.max(...values) : 0;
+          const niceMax = (function(m){
+            if (m <= 5) return 5;
+            if (m <= 10) return 10;
+            if (m <= 20) return 20;
+            if (m <= 50) return 50;
+            if (m <= 100) return 100;
+            return Math.ceil(m / 50) * 50; // step by 50s beyond 100
+          })(maxVal);
+          const tickAmt = niceMax <= 10 ? niceMax : (niceMax <= 50 ? 10 : 10);
+          // Precompute discrete markers for zero values to make them noticeable (grey dots)
+          const zeroMarkers = (seriesData || []).map((v, i) => {
+            return Number(v) === 0 ? { seriesIndex: 0, dataPointIndex: i, fillColor: '#9ca3af', strokeColor: '#6b7280', size: 6 } : null;
+          }).filter(Boolean);
+
+          // Chart rendering for ECharts
+          this.wellUnwellSeries = [{ name: 'Unwell', data: seriesData, color: strokeColor }];
           this.wellUnwellOptions = {
-            chart: { type: 'bar', stacked: false, toolbar: { show: false } },
-            xaxis: { categories: months },
-            colors: ['#22c55e', '#ef4444'],
-            legend: { position: 'top' },
-            grid: { borderColor: '#e5e7eb' },
-            tooltip: { theme: 'light' },
-            animations: { enabled: false }
+            chartType: this.chartType,
+            tooltip: { trigger: 'axis' },
+            legend: { top: 10 },
+            grid: { left: 40, right: 20, bottom: 40, top: 40 },
+            xAxis: { type: 'category', data: monthsShort },
+            yAxis: { type: 'value', min: 0, max: niceMax, splitNumber: tickAmt, splitLine: { lineStyle: { color: '#e5e7eb' } } },
+            color: [strokeColor]
           };
-          // Optional debug log
-          console.log('[Diagnostic] grafik-manager | render Well/Unwell', {
+          // Diagnostics
+          console.log('[Diagnostic] grafik-manager | render Unwell', {
             filters: this.filters,
-            wellDataLength: wellDataSafe.length,
-            unwellDataLength: unwellDataSafe.length,
+            unwellDataLength: unwellData.length,
             xDates: months,
-            seriesKeys: ['well_counts','unwell_counts']
+            seriesKeys: ['unwell_counts'],
+            chartType: this.chartType
           });
         } else {
           // No data → keep placeholder, do not render chart
@@ -491,62 +857,37 @@
           console.warn('[Diagnostic] grafik-manager | no data to render charts');
           // Also POST a diagnostic for backend visibility
           this.sendDiagnosticLog({
-            filters: { month_from: this.filters.start_month, month_to: this.filters.end_month, lokasi: this.filters.lokasi, uid: this.filters.karyawan_uid },
-            wellDataLength: 0,
+            filters: { month_from: this.filters.start_month, month_to: this.filters.end_month, uid: this.filters.karyawan_uid },
             unwellDataLength: 0,
             note: 'no-data-render-skip'
           });
         }
       },
-      updateChartType(){
-        console.log('[Diag] Chart type changed', this.chartType, 'tab:', this.tab);
-        setTimeout(()=>{ try{ console.log('[Diag] (deferred) Chart type change scheduled', { type:this.chartType, tab:this.tab }); }catch(e){} }, 0);
-        const applyStyleTweaks = (opts)=>{
-          if (!opts) return;
-          // Common safety tweaks
-          opts.animations = { enabled: false };
-          opts.dataLabels = { enabled: false };
-          // Adjust stroke/markers/fill for line/area
-          if (this.chartType === 'line' || this.chartType === 'area') {
-            opts.stroke = Object.assign({}, opts.stroke || {}, { width: 2, curve: 'straight' });
-            opts.markers = Object.assign({}, opts.markers || {}, { size: 0 });
-            if (this.chartType === 'area') {
-              opts.fill = Object.assign({}, opts.fill || {}, { type: 'solid', opacity: 0.25 });
-            }
-          }
-          if (this.chartType === 'bar') {
-            // Minimal bar options
-            opts.plotOptions = Object.assign({}, opts.plotOptions || {}, { bar: Object.assign({}, (opts.plotOptions||{}).bar || {}, { columnWidth: '60%' }) });
-          }
-        };
-        if(this.tab==='health') {
-          if (this.chartOptions) {
-            this.chartOptions.chart = Object.assign({}, this.chartOptions.chart || {}, { type: this.chartType });
-            applyStyleTweaks(this.chartOptions);
-          }
-          // Use component ref for minimal update to avoid deep reactive overhead
-          const refComp = this.$refs.healthChart;
-          if (refComp && typeof refComp.setType === 'function') {
-            try { setTimeout(()=>{ refComp.setType(this.chartType); console.log('[Diag] setType applied via ref for health'); }, 0); } catch(e){}
+      updateChartType(newType, oldType){
+        // Simplified for ECharts: just switch reactive chartType; wrapper handles rendering
+        this.chartType = newType;
+        if (this.tab === 'well') {
+          if (this.wellUnwellOptions) {
+            this.wellUnwellOptions.chartType = newType;
+            // Reassign to a new object to trigger shallow watchers immediately
+            this.wellUnwellOptions = Object.assign({}, this.wellUnwellOptions);
           }
         } else {
-          if (this.wellUnwellOptions) {
-            this.wellUnwellOptions.chart = Object.assign({}, this.wellUnwellOptions.chart || {}, { type: this.chartType });
-            applyStyleTweaks(this.wellUnwellOptions);
-          }
-          const refComp = this.$refs.wellChart;
-          if (refComp && typeof refComp.setType === 'function') {
-            try { setTimeout(()=>{ refComp.setType(this.chartType); console.log('[Diag] setType applied via ref for well'); }, 0); } catch(e){}
+          if (this.healthExceedOptions) {
+            this.healthExceedOptions.chartType = newType;
+            // Reassign to a new object to trigger shallow watchers immediately
+            this.healthExceedOptions = Object.assign({}, this.healthExceedOptions);
           }
         }
       },
+      handleChartTypeUpdate(nextType){
+        // Preserve current dataset (no refetch).
+        this.chartType = nextType;
+      },
       updateMetricOpacity(){
         console.log('[Diag] Active metric changed', this.activeMetric);
-        if(!this.chartSeries) return;
-        // Update per-series opacity flag
-        this.chartSeries=this.chartSeries.map(s=>({ ...s, opacity:this.activeMetric && s.name!==this.activeMetric?0.3:1 }));
-        // Also reflect translucent vs solid visually via fill.opacity array and color alpha
-        const opacities = this.chartSeries.map(s => (this.activeMetric && s.name!==this.activeMetric) ? 0.3 : 1);
+        // Only apply opacity/color changes when Health chart is active and series exist
+        if(this.tab!=='health' || !Array.isArray(this.chartSeries)) return;
         const hexToRgba = (hex, a=1)=>{
           try{
             let h = (hex||'').replace('#','');
@@ -557,26 +898,21 @@
             return `rgba(${r}, ${g}, ${b}, ${a})`;
           }catch(e){ return hex; }
         };
-        if (this.chartOptions){
-          // Apply fill opacity per series (affects area/bar)
-          const fill = Object.assign({}, this.chartOptions.fill || {}, { opacity: opacities });
-          this.chartOptions.fill = fill;
-          // Adjust colors with alpha for non-active series (affects line stroke and bar/area fill)
-          const colorsAdj = (this.chartSeries||[]).map((s)=>{
-            const base = s.color || '#0073fe';
-            const op = (this.activeMetric && s.name!==this.activeMetric) ? 0.3 : 1;
-            return op===1 ? base : hexToRgba(base, op);
-          });
-          this.chartOptions.colors = colorsAdj;
+        // Update series color alpha for non-active metrics; keep underlying data intact
+        this.chartSeries = this.chartSeries.map(s => {
+          const base = s.color || '#0073fe';
+          const isDim = this.activeMetric && s.name !== this.activeMetric;
+          const colorAdj = isDim ? hexToRgba(base, 0.3) : base;
+          return { ...s, color: colorAdj, opacity: isDim ? 0.3 : 1 };
+        });
+        // Sync ECharts palette with adjusted colors
+        if (this.chartOptions) {
+          this.chartOptions.color = (this.chartSeries||[]).map(s => s.color || '#0073fe');
         }
-        if(this.chartOptions && this.chartOptions.annotations && this.activeMetric && METRIC_CONFIG[this.activeMetric]){
-          this.chartOptions.annotations.yaxis=[{
-            y:METRIC_CONFIG[this.activeMetric].threshold,
-            borderColor:METRIC_CONFIG[this.activeMetric].color,
-            strokeDashArray:5,
-            label:{ text:METRIC_CONFIG[this.activeMetric].label, style:{ color:'#fff', background:METRIC_CONFIG[this.activeMetric].color } }
-          }];
-        } else if (this.chartOptions && this.chartOptions.annotations) { this.chartOptions.annotations.yaxis=[]; }
+      },
+      // Expose month label formatter for template usage
+      monthLabelFromISO(s){
+        try { return fmtMonthFullFromISO(s); } catch(e) { return s; }
       }
     },
     template:`
@@ -594,79 +930,171 @@
               <i data-lucide="heart" class="w-4 h-4"></i>
               <span>Health Metrics</span>
             </button>
-            <button :class="'flex items-center gap-2 px-3 py-2 rounded-md ' + (tab==='well' ? 'bg-white shadow-sm text-slate-900' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')" @click="tab='well'; fetchData()">
+            <button v-if="showWellTab" :class="'flex items-center gap-2 px-3 py-2 rounded-md ' + (tab==='well' ? 'bg-white shadow-sm text-slate-900' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')" @click="tab='well'; chartType='bar'; fetchData()">
               <i data-lucide="users" class="w-4 h-4"></i>
-              <span>Well & Unwell</span>
+              <span>Grafik Unwell</span>
             </button>
           </div>
 
           <!-- Filters -->
           <div class="bg-white border rounded-lg p-4 flex flex-wrap gap-4" v-show="showSelectors">
-            <div><label class="text-sm font-medium block">Start Month</label><input type="month" v-model="filters.start_month" class="border rounded px-2 py-1" /></div>
-            <div><label class="text-sm font-medium block">End Month</label><input type="month" v-model="filters.end_month" class="border rounded px-2 py-1" /></div>
-            <div><label class="text-sm font-medium block">Lokasi</label>
-              <select v-model="filters.lokasi" class="border rounded px-2 py-1">
-                <option value="">Semua Lokasi</option>
-                <option v-for="lok in lokasiList" :key="lok" :value="lok">{{ lok }}</option>
-              </select>
-            </div>
-            <div><label class="text-sm font-medium block">Karyawan</label>
-              <select v-model="filters.karyawan_uid" class="border rounded px-2 py-1 min-w-[220px]">
-                <option value="">Semua Karyawan</option>
-                <option v-for="p in karyawanList" :key="p.uid" :value="p.uid">{{ p.nama }}</option>
-              </select>
-            </div>
-            <button @click="fetchData" class="bg-black hover:bg-black/90 text-white px-2 py-1 rounded w-auto text-sm">Terapkan</button>
+            <!-- Health tab filters -->
+            <template v-if="tab==='health'">
+              <div>
+                <label class="text-sm font-medium block">Parameter</label>
+                <select v-model="filters.parameter" class="border rounded px-2 py-1 min-w-[220px]">
+                  <option value="Semua">Semua</option>
+                  <option v-for="m in metricsList" :key="m" :value="m">{{ m }}</option>
+                </select>
+              </div>
+              <div><label class="text-sm font-medium block">Start Month</label><input type="month" v-model="filters.start_month" class="border rounded px-2 py-1" /></div>
+              <div><label class="text-sm font-medium block">End Month</label><input type="month" v-model="filters.end_month" class="border rounded px-2 py-1" /></div>
+              <!-- Lokasi filter removed -->
+              <div><label class="text-sm font-medium block">Karyawan</label>
+                <template v-if="!hideKaryawanSelect">
+                  <select v-model="filters.karyawan_uid" class="border rounded px-2 py-1 min-w-[220px]">
+                    <option v-for="p in karyawanList" :key="p.uid" :value="p.uid">{{ p.nama }}</option>
+                  </select>
+                </template>
+              </div>
+              <button @click="fetchData" class="bg-black hover:bg-black/90 text-white px-2 py-1 rounded w-auto text-sm">Terapkan</button>
+            </template>
+            <template v-else>
+              <div>
+                <label class="text-sm font-medium block">Parameter</label>
+                <select v-model="filters.parameter" class="border rounded px-2 py-1 min-w-[220px]">
+                  <option value="Semua">Semua</option>
+                  <option v-for="m in metricsList" :key="m" :value="m">{{ m }}</option>
+                </select>
+              </div>
+              <div><label class="text-sm font-medium block">Start Month</label><input type="month" v-model="filters.start_month" class="border rounded px-2 py-1" /></div>
+              <div><label class="text-sm font-medium block">End Month</label><input type="month" v-model="filters.end_month" class="border rounded px-2 py-1" /></div>
+              <!-- Lokasi filter removed -->
+              <button @click="fetchData" class="bg-black hover:bg-black/90 text-white px-2 py-1 rounded w-auto text-sm">Terapkan</button>
+            </template>
           </div>
 
-          <!-- Compact metric cards in a single horizontal row (scrollable if needed) -->
-          <div v-if="tab==='health'" class="my-2">
-            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
-              <div v-for="metric in healthMetrics" :key="metric.title"
-                   class="bg-white rounded-2xl shadow p-3 flex flex-col cursor-pointer w-44 h-36 transition-colors"
-                   :class="activeMetric===metric.title ? 'bg-blue-50 ring-1 ring-blue-400' : 'hover:bg-slate-50'"
-                   @click="activeMetric = metric.title; updateMetricOpacity()">
-                <div class="flex items-center justify-between mb-1">
-                  <h3 class="text-slate-900 font-medium text-xs">{{ metric.title }}</h3>
-                  <i :data-lucide="metric.icon" class="w-4 h-4" :style="{ color: metric.iconHex }"></i>
-                </div>
-                <p class="text-slate-600 text-[11px] mb-2 line-clamp-2">{{ metric.description }}</p>
-                <div v-if="metric.statusLabel"
-                     :class="['inline-flex items-center text-[11px] font-medium rounded-full px-2 py-0.5 mb-2', metric.statusClass].join(' ')">
-                  {{ metric.statusLabel }}
-                </div>
-                <div class="mt-auto text-slate-900 font-semibold text-sm">{{ metric.value ?? '-' }}</div>
-              </div>
-            </div>
-          </div>
+          <!-- Metric cards removed per overhaul -->
 
           <!-- Chart -->
           <div class="border rounded-lg p-4 bg-slate-50/50 min-h-[520px]">
             <!-- Chart type toggle positioned at the top-right of the graph area -->
-            <div class="flex items-center justify-end mb-3">
-              <chart-type-toggle :type="chartType" @update="chartType=$event" />
+            <div class="flex items-start justify-between mb-3">
+              <!-- Left column: blocks -->
+              <div class="flex flex-col gap-2">
+                <!-- Unwell total pill -->
+                <div class="inline-flex items-center gap-2 bg-white border rounded-md px-3 py-1 text-sm text-slate-700 shadow-sm">
+                  <i data-lucide="alert-triangle" class="w-4 h-4 text-red-600"></i>
+                  <span>Total Unwell:</span>
+                  <span class="font-semibold text-red-700">{{ totalUnwellWindow }}</span>
+                </div>
+                <!-- Selected karyawan block (Health tab only) -->
+                <div v-if="tab==='health' && selectedEmployee" class="inline-flex items-center gap-3 bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 border border-indigo-200 rounded-md px-3 py-2 shadow-sm">
+                  <div class="flex items-center gap-2">
+                    <i data-lucide="user" class="w-5 h-5 text-indigo-600"></i>
+                    <span class="text-base font-semibold text-slate-900">{{ selectedEmployee.nama }}</span>
+                  </div>
+                  <div v-if="selectedEmployee.lokasi" class="flex items-center gap-1 text-sm text-slate-700">
+                    <i data-lucide="map-pin" class="w-4 h-4 text-indigo-500"></i>
+                    <span class="font-medium">{{ selectedEmployee.lokasi }}</span>
+                  </div>
+                </div>
+              </div>
+              <!-- Right: Chart type toggle -->
+              <chart-type-toggle :type="chartType" @update="handleChartTypeUpdate($event)" />
             </div>
             <!-- Render only when data is ready to avoid heavy initial chart render on empty config -->
-            <apex-chart
-              ref="healthChart"
-              v-if="tab==='health' && chartOptions && chartSeries && chartSeries.length && chartOptions.xaxis && chartOptions.xaxis.categories && chartOptions.xaxis.categories.length"
-              :options="chartOptions"
-              :series="chartSeries"
-              :height="500"
-            />
-            <apex-chart
-              ref="wellChart"
-              v-else-if="tab==='well' && wellUnwellOptions && wellUnwellSeries && wellUnwellSeries.length && wellUnwellOptions.xaxis && wellUnwellOptions.xaxis.categories && wellUnwellOptions.xaxis.categories.length"
-              :options="wellUnwellOptions"
-              :series="wellUnwellSeries"
-              :height="500"
-            />
+            <div v-if="tab==='health'" id="health-chart" class="w-full">
+              <template v-if="healthHasData">
+                <e-chart-wrapper
+                  ref="healthChart"
+                  :key="'health-chart'"
+                  v-if="healthExceedOptions && healthExceedSeries && healthExceedSeries.length && healthExceedOptions.xAxis && healthExceedOptions.xAxis.data && healthExceedOptions.xAxis.data.length"
+                  :options="healthExceedOptions"
+                  :series="healthExceedSeries"
+                  :height="500"
+                />
+              </template>
+              <div v-else class="flex items-center justify-center h-[480px]">
+                <div class="text-center text-slate-600">
+                  <div class="text-lg font-semibold mb-1">Belum ada data</div>
+                </div>
+              </div>
+            </div>
+            <div v-else-if="showWellTab && tab==='well'" id="well-chart" class="w-full">
+              <e-chart-wrapper
+                ref="wellChart"
+                :key="'well-chart'"
+                v-if="wellUnwellOptions && wellUnwellSeries && wellUnwellSeries.length && wellUnwellOptions.xAxis && wellUnwellOptions.xAxis.data && wellUnwellOptions.xAxis.data.length"
+                :options="wellUnwellOptions"
+                :series="wellUnwellSeries"
+                :height="500"
+              />
+            </div>
             <div v-else class="flex items-center justify-center h-[480px]">
               <div class="text-center text-slate-600">
                 <div class="text-lg font-semibold mb-1">Tidak ada data untuk filter ini</div>
                 <div class="text-sm">Jika Anda sudah memilih karyawan, sistem akan menampilkan seluruh riwayat secara otomatis.</div>
               </div>
             </div>
+          </div>
+
+          <!-- Health Exceed Details Table (Parameter Melebihi Batas per Bulan) -->
+          <div v-if="tab==='health'" class="mt-4 bg-white border rounded-lg p-4">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-slate-900 font-semibold">Parameter Melebihi Batas per Bulan</h3>
+            </div>
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b">
+                  <th class="text-left py-2 px-2 w-32">Bulan</th>
+                  <th class="text-left py-2 px-2">Parameter</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in healthTableRows" :key="row.month" class="border-b align-top">
+                  <td class="py-2 px-2 text-slate-800">{{ monthLabelFromISO(row.month) }}</td>
+                  <td class="py-2 px-2">
+                    <span v-if="!row.parameters || !row.parameters.length" class="text-slate-500">-</span>
+                    <span v-else class="flex flex-wrap gap-2">
+                      <span v-for="p in row.parameters" :key="p.name + '-' + row.month" class="inline-flex items-center gap-1 rounded-full bg-red-50 text-red-700 border border-red-200 px-2 py-0.5">
+                        <i data-lucide="alert-triangle" class="w-3 h-3"></i>
+                        <span class="font-medium">{{ p.name }}</span>
+                        <span class="text-xs">{{ p.value }}</span>
+                      </span>
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Unwell Details Table (Bulan vs Karyawan Unwell) -->
+          <div v-if="showWellTab && tab==='well'" class="mt-4 bg-white border rounded-lg p-4">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-slate-900 font-semibold">Daftar Karyawan Unwell per Bulan</h3>
+              <!-- Paginator Removed -->
+            </div>
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b">
+                  <th class="text-left py-2 px-2 w-32">Bulan</th>
+                  <th class="text-left py-2 px-2">Karyawan Unwell</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in wellTableRows" :key="row.month" class="border-b align-top">
+                  <td class="py-2 px-2 text-slate-800">{{ monthLabelFromISO(row.month) }}</td>
+                  <td class="py-2 px-2">
+                    <span v-if="!row.employees || !row.employees.length" class="text-slate-500">-</span>
+                    <span v-else class="flex flex-wrap gap-x-2 gap-y-1">
+                      <a v-for="emp in row.employees" :key="emp.uid" :href="'/manager/employee/' + emp.uid + '/?submenu=data_karyawan&subtab=profile'" class="text-blue-600 hover:underline">{{ emp.nama || emp.uid }}</a>
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <!-- Paginator message removed -->
           </div>
         </div>
       </div>

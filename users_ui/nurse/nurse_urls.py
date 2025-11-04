@@ -22,6 +22,7 @@ urlpatterns = [
 
     # ---------------- Karyawan Detail / Edit ----------------
     path('karyawan/<str:uid>/', nurse_views.nurse_karyawan_detail, name='karyawan_detail'),
+    path('karyawan/<str:uid>/upload-avatar/', nurse_views.upload_karyawan_avatar, name='upload_karyawan_avatar'),
     path('karyawan/<str:uid>/save/', nurse_views.nurse_save_medical_checkup, name='save_checkup'),
     # Export history for a specific UID (XLS/PDF)
     path('export-checkup-history-xls/<str:uid>/', nurse_views.nurse_export_checkup_history_by_uid, name='export_checkup_history_by_uid'),

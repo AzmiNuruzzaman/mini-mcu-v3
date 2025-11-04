@@ -741,6 +741,63 @@ def upload_avatar(request):
     return redirect(reverse("manager:dashboard"))
 
 # -------------------------
+# Employee avatar upload (per karyawan UID)
+# -------------------------
+@require_http_methods(["POST"])
+def upload_karyawan_avatar(request, uid):
+    """Upload/update avatar photo for a specific employee (by UID)."""
+    if not request.session.get("authenticated") or request.session.get("user_role") != "Manager":
+        return redirect("accounts:login")
+
+    # Ensure file present
+    file = request.FILES.get("avatar")
+    if not file:
+        request.session["error_message"] = "Tidak ada file yang diunggah."
+        return redirect(reverse("manager:edit_karyawan", kwargs={"uid": uid}) + "?submenu=data_karyawan&subtab=profile")
+
+    # Validate file type and size
+    allowed_types = {
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+        "image/gif": "gif",
+    }
+    content_type = getattr(file, "content_type", "")
+    ext = allowed_types.get(content_type)
+    if not ext:
+        request.session["error_message"] = "Tipe file tidak didukung. Gunakan JPG, PNG, WEBP, atau GIF."
+        return redirect(reverse("manager:edit_karyawan", kwargs={"uid": uid}) + "?submenu=data_karyawan&subtab=profile")
+    max_size = 2 * 1024 * 1024
+    if getattr(file, "size", 0) > max_size:
+        request.session["error_message"] = "Ukuran file terlalu besar (maks 2MB)."
+        return redirect(reverse("manager:edit_karyawan", kwargs={"uid": uid}) + "?submenu=data_karyawan&subtab=profile")
+
+    # Prepare directories
+    target_dir = os.path.join(settings.MEDIA_ROOT, "avatars", "karyawan")
+    os.makedirs(target_dir, exist_ok=True)
+
+    # Remove existing avatars for this UID across supported extensions
+    for old_ext in ["jpg", "jpeg", "png", "webp", "gif"]:
+        old_path = os.path.join(target_dir, f"{uid}.{old_ext}")
+        try:
+            if os.path.exists(old_path):
+                os.remove(old_path)
+        except Exception:
+            pass
+
+    # Save new file
+    target_path = os.path.join(target_dir, f"{uid}.{ext}")
+    try:
+        with open(target_path, "wb") as f:
+            for chunk in file.chunks():
+                f.write(chunk)
+        request.session["success_message"] = "Foto karyawan berhasil diperbarui."
+    except Exception as e:
+        request.session["error_message"] = f"Gagal menyimpan avatar: {e}"
+
+    return redirect(reverse("manager:edit_karyawan", kwargs={"uid": uid}) + "?submenu=data_karyawan&subtab=profile")
+
+# -------------------------
 # Tab 3: QR Codes
 # -------------------------
 def qr_manager_interface(request):
@@ -1532,6 +1589,20 @@ def employee_profile(request, uid):
 
     checkups = get_medical_checkups_by_uid(uid)
 
+    # Compute employee avatar URL (if exists)
+    employee_avatar_url = None
+    try:
+        from django.conf import settings as _settings
+        avatar_dir = os.path.join(_settings.MEDIA_ROOT, "avatars", "karyawan")
+        if os.path.isdir(avatar_dir):
+            for ext in ["jpg", "jpeg", "png", "webp", "gif"]:
+                candidate = os.path.join(avatar_dir, f"{uid}.{ext}")
+                if os.path.exists(candidate):
+                    employee_avatar_url = f"{_settings.MEDIA_URL}avatars/karyawan/{uid}.{ext}"
+                    break
+    except Exception:
+        employee_avatar_url = None
+
     # Compute latest checkup record for display below the employee info table
     latest_checkup = None
     try:
@@ -1890,6 +1961,10 @@ def employee_profile(request, uid):
         "grafik_chart_html": grafik_chart_html,
         "grafik_start_month": grafik_start_month,
         "grafik_end_month": grafik_end_month,
+        # For profile photo upload/display
+        "employee_avatar_url": employee_avatar_url,
+        "employee_avatar_upload_url": reverse("manager:upload_karyawan_avatar", kwargs={"uid": uid}),
+        "MEDIA_URL": settings.MEDIA_URL,
     })
 
 # New: Add Karyawan (Data Karyawan > Tambah karyawan)
@@ -3570,7 +3645,19 @@ def manage_karyawan_uid(request):
 # TODO: Vue fetch target → used in grafik_kesehatan (Phase 2)
 @require_http_methods(["GET"]) 
 def well_unwell_summary_json(request):
-    """Return Well vs Unwell totals as JSON filtered by month range (YYYY-MM) and lokasi kerja."""
+    """Return Well vs Unwell totals as JSON filtered by month range (YYYY-MM), lokasi kerja, karyawan UID,
+    and optional health parameter. When parameter == "Semua", count unique Unwell employees per month across
+    all parameters (each employee counted once per month). When a specific parameter is selected, only employees
+    exceeding that parameter's threshold are counted as Unwell, still uniquely per month.
+
+    Response shape:
+    {
+      "months": ["2025-01", "2025-02", ...],
+      "well_counts": [...],
+      "unwell_counts": [...],
+      "debug": { ... }  # temporary diagnostics
+    }
+    """
     # STEP 3️⃣ — BACKEND PARAMETER DIAGNOSTIC
     try:
         print("[DEBUG] Incoming GET params:", dict(request.GET))
@@ -3590,6 +3677,7 @@ def well_unwell_summary_json(request):
     month_to = request.GET.get("month_to", "")
     lokasi = request.GET.get("lokasi", "")
     uid_filter = (request.GET.get("uid", "") or "").strip()
+    parameter_filter = (request.GET.get("parameter", "") or "").strip()
 
     # Load checkup data
     try:
@@ -3726,17 +3814,148 @@ def well_unwell_summary_json(request):
             except Exception:
                 pass
 
-            # Group by year-month and status
+            # Unique-per-month counting with optional parameter filter
             df["year_month"] = df["tanggal_checkup"].dt.strftime("%Y-%m")
-            monthly_stats = df.groupby(["year_month", "status"]).size().unstack(fill_value=0)
 
-            # Sort months chronologically
-            monthly_stats = monthly_stats.sort_index()
+            # Helper: systolic extractor from "120/80" or similar
+            def _parse_systolic(val):
+                try:
+                    if val is None:
+                        return None
+                    s = str(val).strip()
+                    if not s:
+                        return None
+                    # take first numeric before '/'
+                    part = s.split("/")[0]
+                    part = ''.join([ch for ch in part if ch.isdigit()])
+                    return int(part) if part else None
+                except Exception:
+                    return None
 
-            # Extract data for response
-            months = monthly_stats.index.tolist()
-            well_counts = monthly_stats.get("Well", _pd.Series(0, index=monthly_stats.index)).tolist()
-            unwell_counts = monthly_stats.get("Unwell", _pd.Series(0, index=monthly_stats.index)).tolist()
+            # Build parameter-specific flag
+            pnorm = parameter_filter.strip().lower()
+            debug_info["parameter_filter"] = parameter_filter
+            flag_col = "__param_flag__"
+            try:
+                if not pnorm or pnorm in ["all", "semua"]:
+                    # Global Unwell flag from status
+                    df[flag_col] = (df["status"].astype(str).str.lower() == "unwell")
+                else:
+                    # Specific parameter thresholds aligned with compute_status
+                    if pnorm == "cholesterol" and "cholesterol" in df.columns:
+                        df[flag_col] = _pd.to_numeric(df["cholesterol"], errors="coerce") > 240
+                    elif pnorm in ["asam urat", "asam_urat"] and "asam_urat" in df.columns:
+                        df[flag_col] = _pd.to_numeric(df["asam_urat"], errors="coerce") > 7
+                    elif pnorm in ["gula darah puasa", "gula_darah_puasa"] and "gula_darah_puasa" in df.columns:
+                        df[flag_col] = _pd.to_numeric(df["gula_darah_puasa"], errors="coerce") > 120
+                    elif pnorm in ["gula darah sewaktu", "gula_darah_sewaktu"] and "gula_darah_sewaktu" in df.columns:
+                        df[flag_col] = _pd.to_numeric(df["gula_darah_sewaktu"], errors="coerce") > 200
+                    elif pnorm in ["tekanan darah", "tekanan_darah"] and "tekanan_darah" in df.columns:
+                        df["__systolic__"] = df["tekanan_darah"].apply(_parse_systolic)
+                        df[flag_col] = _pd.to_numeric(df["__systolic__"], errors="coerce") > 140
+                    else:
+                        # Unknown parameter → default to global status to avoid empty results
+                        df[flag_col] = (df["status"].astype(str).str.lower() == "unwell")
+                        debug_info["parameter_unrecognized"] = True
+            except Exception as _e:
+                df[flag_col] = (df["status"].astype(str).str.lower() == "unwell")
+                debug_info["parameter_flag_error"] = str(_e)
+
+            # Deduplicate by (year_month, uid): employee counted once per month
+            # Compute any flag within the month per employee
+            try:
+                # Ensure uid exists
+                if "uid" not in df.columns:
+                    df["uid"] = df.get("employee_uid", None)
+                slim = df[["year_month", "uid", flag_col]].copy()
+                slim[flag_col] = slim[flag_col].fillna(False).astype(bool)
+                per_emp_month = slim.groupby(["year_month", "uid"])[flag_col].max().reset_index()
+                # Monthly totals
+                unwell_series = per_emp_month.groupby("year_month")[flag_col].sum()
+                total_series = per_emp_month.groupby("year_month").size()
+                well_series = total_series - unwell_series
+                # Build per-month unwell employee list (uid + nama)
+                # Map uid -> nama from df if available; otherwise, merge from employees master
+                uid_to_name = {}
+                try:
+                    if "nama" in df.columns and "uid" in df.columns:
+                        tmp = df[["uid", "nama"]].dropna()
+                        uid_to_name = { str(r["uid"]): str(r["nama"]) for _, r in tmp.iterrows() if r.get("uid") }
+                    else:
+                        emp_df = get_employees()
+                        if emp_df is not None and hasattr(emp_df, "empty") and not emp_df.empty:
+                            cols = [c for c in ["uid", "nama", "name"] if c in emp_df.columns]
+                            tmp = emp_df[cols].copy()
+                            for _, r in tmp.iterrows():
+                                uid_to_name[str(r.get("uid"))] = str(r.get("nama") or r.get("name") or "-")
+                except Exception:
+                    pass
+                # Create ordered months and details list
+                # Helper to build full month range between month_from and month_to (inclusive)
+                def _build_months_range(mf, mt):
+                    try:
+                        mf = (mf or "").strip()
+                        mt = (mt or "").strip()
+                        if not mf and not mt:
+                            return None
+                        # Determine start (sy, sm) and end (ey, em)
+                        if mf:
+                            parts = mf.split("-")
+                            sy = int(parts[0]); sm = int(parts[1])
+                        else:
+                            parts = mt.split("-")
+                            sy = int(parts[0]); sm = int(parts[1])
+                        if mt:
+                            parts = mt.split("-")
+                            ey = int(parts[0]); em = int(parts[1])
+                        else:
+                            ey = sy; em = sm
+                        # Normalize ordering
+                        if (ey < sy) or (ey == sy and em < sm):
+                            sy, sm, ey, em = ey, em, sy, sm
+                        # Build inclusive month list
+                        out = []
+                        y, m = sy, sm
+                        while True:
+                            out.append(f"{y:04d}-{m:02d}")
+                            if y == ey and m == em:
+                                break
+                            if m == 12:
+                                y += 1; m = 1
+                            else:
+                                m += 1
+                        return out
+                    except Exception:
+                        return None
+                idx = sorted(list(set(per_emp_month["year_month"].tolist())))
+                full_months = _build_months_range(month_from, month_to)
+                months = full_months if full_months else idx
+                # For each month, list unique uids with flag true
+                unwell_by_month = []
+                try:
+                    group = per_emp_month.groupby("year_month")
+                    for m in months:
+                        rows = group.get_group(m) if m in group.groups else _pd.DataFrame(columns=["uid", flag_col])
+                        uids = rows.loc[rows[flag_col] == True, "uid"].dropna().astype(str).unique().tolist()
+                        employees = [{"uid": u, "nama": uid_to_name.get(u, u)} for u in uids]
+                        unwell_by_month.append({"month": m, "employees": employees})
+                except Exception as _e:
+                    debug_info["unwell_details_error"] = str(_e)
+                    unwell_by_month = []
+                # Sort by month and prepare lists
+                # Align series to months order
+                unwell_counts = [int(unwell_series.get(m, 0)) for m in months]
+                well_counts = [int(well_series.get(m, 0)) for m in months]
+                debug_info["unwell_by_month_count"] = len(unwell_by_month)
+            except Exception as _e:
+                debug_info["unique_count_error"] = str(_e)
+                # Fallback to original grouping by status (non-unique)
+                monthly_stats = df.groupby(["year_month", "status"]).size().unstack(fill_value=0)
+                monthly_stats = monthly_stats.sort_index()
+                months = monthly_stats.index.tolist()
+                well_counts = monthly_stats.get("Well", _pd.Series(0, index=monthly_stats.index)).tolist()
+                unwell_counts = monthly_stats.get("Unwell", _pd.Series(0, index=monthly_stats.index)).tolist()
+                unwell_by_month = []
 
     except Exception as e:
         print(f"Error processing Well/Unwell data: {str(e)}")
@@ -3747,6 +3966,7 @@ def well_unwell_summary_json(request):
         "months": months,
         "well_counts": well_counts,
         "unwell_counts": unwell_counts,
+        "unwell_by_month": unwell_by_month,
         # Temporary: include debug info for automated diagnostics. Will be removed after verification.
         "debug": debug_info
     }

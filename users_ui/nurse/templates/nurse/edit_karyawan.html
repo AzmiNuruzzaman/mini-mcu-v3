@@ -67,6 +67,46 @@
         </select>
       </form>
 
+      <!-- Avatar + Identity: make it fancy like Manager -->
+      <section class="p-4 bg-white shadow rounded mb-4">
+        <div class="flex items-center gap-6">
+          <!-- Avatar preview -->
+          <div class="relative flex flex-col items-center isolate">
+            <div class="w-28 h-28 rounded-full ring-4 ring-blue-200 shadow-md overflow-hidden bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center z-10">
+              {% if employee_avatar_url %}
+                <img src="{{ employee_avatar_url }}" alt="Foto Karyawan" class="w-full h-full object-cover rounded-full" />
+              {% else %}
+                <span class="text-white text-3xl font-bold">{{ employee.nama|default:"?"|slice:":1"|upper }}</span>
+              {% endif %}
+            </div>
+            {% if employee_avatar_upload_url %}
+            <!-- Upload button overlay -->
+            <form method="post" action="{{ employee_avatar_upload_url }}" enctype="multipart/form-data" class="absolute inset-0 z-20 flex items-center justify-center">
+              {% csrf_token %}
+              <input type="file" name="avatar" id="nurse-karyawan-avatar-input" accept="image/*" class="hidden" onchange="this.form.submit()" />
+              <label for="nurse-karyawan-avatar-input" class="cursor-pointer h-10 w-10 flex items-center justify-center rounded-full bg-white/90 shadow-md border border-slate-200 hover:bg-blue-50 hover:border-blue-300 transition-colors" title="Unggah foto" aria-label="Unggah foto profil">
+                <!-- Camera icon -->
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M4 5a2 2 0 012-2h2l1-1h2l1 1h2a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm6 2a4 4 0 100 8 4 4 0 000-8z" />
+                </svg>
+              </label>
+            </form>
+            {% endif %}
+            <!-- Helper text: file types and size -->
+            <div class="mt-2 text-xs text-slate-700 bg-white/70 backdrop-blur-sm px-2 py-1 rounded shadow-sm">JPG, PNG, WEBP, GIF (maks 2MB)</div>
+          </div>
+          <!-- Basic identity -->
+          <div>
+            <div class="text-2xl font-bold text-slate-800">{{ employee.nama }}</div>
+            <div class="text-sm text-slate-600">UID: <span class="font-mono">{{ employee.uid }}</span></div>
+            <div class="mt-1 inline-flex items-center gap-2">
+              <span class="px-2 py-1 text-xs rounded-full bg-blue-50 text-blue-700 border border-blue-200">{{ employee.jabatan|default:"-" }}</span>
+              <span class="px-2 py-1 text-xs rounded-full bg-purple-50 text-purple-700 border border-purple-200">{{ employee.lokasi|default:"-" }}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- 2. Dataframe style display karyawan info with editable kontak darurat -->
       <section class="p-4 bg-white shadow rounded">
         <div class="overflow-x-auto">
@@ -455,9 +495,12 @@
   <!-- Grafik Content (Vue GrafikManager with legacy Plotly fallback) -->
   <div id="grafik-content" class="rounded-xl border border-slate-300 shadow-sm bg-white p-0">
     <!-- Vue mount point for GrafikManager -->
-    <div id="grafik-manager" class="min-h-[300px]" data-preselect-uid="{{ employee.uid }}" data-hide-selectors="true"></div>
+    <div id="grafik-manager" class="min-h-[300px]"
+         data-preselect-uid="{{ employee.uid }}"
+         data-hide-karyawan-select="true"
+         data-hide-unwell="true"></div>
 
-    <!-- Filters are hidden and Karyawan preselected via data-* attributes consumed by GrafikManager -->
+    <!-- Karyawan selector disembunyikan (preselected UID), Parameter & Month terlihat; Unwell tab disembunyikan -->
 
     
   </div>
@@ -469,9 +512,9 @@
 
 {% block extra_scripts %}
   {% if active_submenu == 'grafik' %}
-    <!-- ApexCharts for chart rendering (load BEFORE component so charts can mount immediately) -->
-    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
-    <!-- GrafikManager component (depends on Vue global and ApexCharts) -->
+    <!-- ECharts for chart rendering (load BEFORE component so charts can mount immediately) -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@6/dist/echarts.min.js"></script>
+    <!-- GrafikManager component (depends on Vue global and ECharts) -->
     <script src="{% static 'js/components/grafik_manager.js' %}"></script>
     <!-- Nurse alias for GrafikManager (optional) -->
     <script src="{% static 'js/components/grafik_nurse.js' %}"></script>

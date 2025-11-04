@@ -1161,6 +1161,25 @@ def nurse_karyawan_detail(request, uid):
     # Dynamically control view-only mode: enable inline editing on History tab
     view_only_flag = False if active_submenu == "history" else True
 
+    # --- Employee avatar URL (if exists) and upload URL ---
+    employee_avatar_url = None
+    try:
+        from django.conf import settings as _settings
+        import os as _os
+        base_dir = _os.path.join(_settings.MEDIA_ROOT, "avatars", "karyawan")
+        for ext in ["jpg", "jpeg", "png", "webp", "gif"]:
+            p = _os.path.join(base_dir, f"{uid}.{ext}")
+            if _os.path.exists(p):
+                employee_avatar_url = _settings.MEDIA_URL + f"avatars/karyawan/{uid}.{ext}"
+                break
+    except Exception:
+        employee_avatar_url = None
+
+    try:
+        employee_avatar_upload_url = reverse("nurse:upload_karyawan_avatar", kwargs={"uid": uid})
+    except Exception:
+        employee_avatar_upload_url = None
+
     return render(request, "nurse/edit_karyawan.html", {
         "employee": employee_clean or {},
         "employees": employees,
@@ -1176,6 +1195,8 @@ def nurse_karyawan_detail(request, uid):
         "grafik_chart_html": grafik_chart_html,
         "grafik_start_month": grafik_start_month,
         "grafik_end_month": grafik_end_month,
+        "employee_avatar_url": employee_avatar_url,
+        "employee_avatar_upload_url": employee_avatar_upload_url,
     })
 
 
@@ -1462,6 +1483,64 @@ def upload_avatar(request):
         request.session["error_message"] = f"Gagal menyimpan avatar: {e}"
 
     return redirect(reverse("nurse:dashboard"))
+
+@require_http_methods(["POST"])
+def upload_karyawan_avatar(request, uid):
+    """Allow Nurse to upload a profile photo for a specific Karyawan (employee).
+
+    Validates image type and size, stores under MEDIA_ROOT/avatars/karyawan/{uid}.ext,
+    replacing any previous avatar for that UID. Redirects back to the profile tab.
+    """
+    # Auth: Nurse only
+    if not request.session.get("authenticated") or request.session.get("user_role") != "Tenaga Kesehatan":
+        return redirect("accounts:login")
+
+    file = request.FILES.get("avatar")
+    if not file:
+        request.session["error_message"] = "Tidak ada file yang diunggah."
+        return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": uid}) + "?submenu=data_karyawan&subtab=profile")
+
+    # Validate type and size (max 2MB)
+    allowed_types = {
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+        "image/gif": "gif",
+    }
+    content_type = getattr(file, "content_type", "")
+    ext = allowed_types.get(content_type)
+    if not ext:
+        request.session["error_message"] = "Tipe file tidak didukung. Gunakan JPG, PNG, WEBP, atau GIF."
+        return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": uid}) + "?submenu=data_karyawan&subtab=profile")
+    max_size = 2 * 1024 * 1024
+    if getattr(file, "size", 0) > max_size:
+        request.session["error_message"] = "Ukuran file terlalu besar (maks 2MB)."
+        return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": uid}) + "?submenu=data_karyawan&subtab=profile")
+
+    # Prepare target directory
+    target_dir = os.path.join(settings.MEDIA_ROOT, "avatars", "karyawan")
+    os.makedirs(target_dir, exist_ok=True)
+
+    # Remove existing files for this UID
+    for old_ext in ["jpg", "jpeg", "png", "webp", "gif"]:
+        old_path = os.path.join(target_dir, f"{uid}.{old_ext}")
+        try:
+            if os.path.exists(old_path):
+                os.remove(old_path)
+        except Exception:
+            pass
+
+    # Save new avatar
+    target_path = os.path.join(target_dir, f"{uid}.{ext}")
+    try:
+        with open(target_path, "wb") as f:
+            for chunk in file.chunks():
+                f.write(chunk)
+        request.session["success_message"] = "Foto profil karyawan berhasil diunggah!"
+    except Exception as e:
+        request.session["error_message"] = f"Gagal menyimpan foto profil: {e}"
+
+    return redirect(reverse("nurse:karyawan_detail", kwargs={"uid": uid}) + "?submenu=data_karyawan&subtab=profile")
 
 @require_http_methods(["GET"]) 
 def nurse_export_checkup_history_by_uid(request, uid):

@@ -77,6 +77,7 @@ urlpatterns = [
     # TAB 6: EMPLOYEE PROFILE / EDIT
     # ===============================
     path("employee/<str:uid>/", manager_views.employee_profile, name="edit_karyawan"),  # edit_karyawan.html
+    path("employee/<str:uid>/upload-avatar/", manager_views.upload_karyawan_avatar, name="upload_karyawan_avatar"),
     path("employee/<str:uid>/save-checkup/", manager_views.save_medical_checkup, name="save_medical_checkup"),
     # NEW: Add Karyawan (used by Data Karyawan > Tambah karyawan form)
     path("employee/add/", manager_views.add_karyawan, name="add_karyawan"),

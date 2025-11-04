@@ -18,7 +18,7 @@
       <button
         :class="activeTab==='well' ? activeTabClass : inactiveTabClass"
         @click="switchTab('well')"
-      >Well & Unwell</button>
+      >Grafik Unwell</button>
     </div>
 
     <!-- Filters -->
@@ -86,11 +86,20 @@
 
     <!-- Chart Section -->
     <div v-if="chartData && chartData.length" class="border rounded-lg p-4 bg-slate-50/50">
-      <ChartContainer
+      <!-- Health Metrics using unified EChartWrapper component -->
+      <EChartWrapper
+        v-if="activeTab==='health'"
         :type="chartType"
         :data="chartData"
         :activeMetric="activeMetric"
-        :showThreshold="activeTab==='health'"
+        :showThreshold="true"
+      />
+      <!-- Unwell tab using unified EChartWrapper component -->
+      <EChartWrapper 
+        v-else 
+        type="bar" 
+        :data="chartData.map(r => ({ month: r.month, well: r.well, unwell: r.unwell }))" 
+        :showThreshold="false" 
       />
     </div>
     <div v-else class="p-12 text-center bg-slate-50 rounded-lg border-2 border-dashed border-slate-300">
@@ -101,8 +110,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
-import ChartContainer from './ChartContainer.vue'
+import { ref, reactive, onMounted, watch } from 'vue'
+import EChartWrapper from './EChartWrapper.vue'
 
 // Chart type toggle icon component
 import { h } from 'vue'
@@ -119,6 +128,7 @@ const activeTab = ref('health')
 const filters = reactive({ start:'', end:'', uid:'all' })
 const chartType = ref('bar')
 const chartTypes = ['bar','line','area']
+// Removed renderKey; ChartContainer now updates chart type in place without remounting
 
 // Metrics and chart data
 const metrics = ref([])
@@ -174,7 +184,7 @@ async function fetchData(){
     const well = json.well || []
     const unwell = json.unwell || []
     chartData.value = months.map((m,i)=>({ month:m, well:well[i]||0, unwell:unwell[i]||0 }))
-    metrics.value = [{ key:'well_unwell',label:'Well & Unwell',color:'#0ea5e9',unit:'orang',value:`${json.summary?.well||0}/${json.summary?.unwell||0}`,status:'',status_color:'',active:true }]
+    metrics.value = [{ key:'well_unwell',label:'Grafik Unwell',color:'#0ea5e9',unit:'orang',value:`${json.summary?.well||0}/${json.summary?.unwell||0}`,status:'',status_color:'',active:true }]
     activeMetric.value='well_unwell'
   }
 }
@@ -188,4 +198,6 @@ onMounted(()=>{
   hydrateEmployeesFromGlobal()
   fetchData()
 })
+
+// Chart type is bound to EChartWrapper via props; no watcher needed
 </script>

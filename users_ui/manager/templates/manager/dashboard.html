@@ -386,10 +386,9 @@
 
 {% block extra_scripts %}
   {% if active_submenu == 'grafik' %}
-    <!-- ApexCharts for chart rendering (load BEFORE component so charts can mount immediately) -->
-    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
-    <!-- GrafikManager component (depends on Vue global and ApexCharts) -->
+    <!-- ECharts for chart rendering (load BEFORE component so charts can mount immediately) -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@6/dist/echarts.min.js"></script>
+    <!-- GrafikManager component (depends on Vue global and ECharts) -->
     <script src="{% static 'js/components/grafik_manager.js' %}"></script>
-    <!-- Note: VueApexCharts wrapper is not required for GrafikManager (uses direct ApexCharts UMD) -->
   {% endif %}
 {% endblock %}

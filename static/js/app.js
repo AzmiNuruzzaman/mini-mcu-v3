@@ -14,10 +14,7 @@ document.addEventListener('DOMContentLoaded', function(){
     if (el && component) {
       try {
         const app = createApp(component);
-        // Register VueApexCharts plugin if available via CDN
-        if (window.VueApexCharts) {
-          try { app.use(window.VueApexCharts); } catch(e) { console.warn('VueApexCharts registration failed', e); }
-        }
+        // ECharts does not require a Vue plugin; wrapper uses window.echarts
         app.mount(selector);
         return true;
       } catch(e) {
@@ -29,12 +26,12 @@ document.addEventListener('DOMContentLoaded', function(){
   }
 
   const C = window.Components || {};
-  // Gate Grafik mount behind ApexCharts availability to avoid race conditions on first load
-  function whenApexReady(cb){
+  // Gate Grafik mount behind ECharts availability to avoid race conditions on first load
+  function whenEchartsReady(cb){
     const start = Date.now();
     const maxWait = 5000; // 5s timeout
     (function poll(){
-      if (window.ApexCharts) { cb(); }
+      if (window.echarts) { cb(); }
       else if (Date.now() - start < maxWait) { setTimeout(poll, 100); }
       else { cb(); }
     })();
@@ -43,7 +40,9 @@ document.addEventListener('DOMContentLoaded', function(){
   const grafikElExists = !!document.querySelector('#grafik-manager');
   if (grafikElExists && (C.GrafikNurse || C.GrafikManager)) {
     const comp = C.GrafikNurse || C.GrafikManager;
-    whenApexReady(()=>{ mountedVueGrafik = mountIfExists('#grafik-manager', comp); });
+    whenEchartsReady(()=>{ 
+      mountedVueGrafik = mountIfExists('#grafik-manager', comp); 
+    });
   }
   if (mountedVueGrafik) {
     const legacy = document.getElementById('grafik-legacy');
