@@ -68,6 +68,8 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
         return;
       }
       this.chart = echarts.init(this.$refs.el);
+      // Track last applied chart type to decide merge vs replace on updates
+      try { this._lastChartType = (this.options && this.options.chartType) || 'line'; } catch(e) { this._lastChartType = 'line'; }
       this.updateChart(true);
       window.addEventListener('resize', this.resize);
     },
@@ -88,13 +90,28 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
           smooth: true,
           connectNulls: true,
           areaStyle: chartType === 'area' ? { opacity: 0.25 } : undefined,
-          lineStyle: { width: 3 },
+          lineStyle: Object.assign({ width: 3 }, s.lineStyle || {}),
           itemStyle: { color: s.color || '#0073fe' },
           label: chartType === 'bar' && s.name === 'Unwell' ? { show: true, position: 'top', color: (s.color || '#dc2626'), fontSize: 12 } : undefined,
-          labelLayout: chartType === 'bar' ? { hideOverlap: true } : undefined
+          labelLayout: chartType === 'bar' ? { hideOverlap: true } : undefined,
+          // Pass-through advanced properties when provided
+          endLabel: s.endLabel,
+          markLine: s.markLine,
+          showSymbol: typeof s.showSymbol === 'boolean' ? s.showSymbol : undefined,
+          emphasis: s.emphasis,
+          symbol: s.symbol
         }));
-        // Merge updates for performance; lazy update to batch layout
-        this.chart.setOption(base, false, true);
+        // Decide whether to fully replace the option to avoid stale artifacts on type change
+        const typeChanged = this._lastChartType !== chartType;
+        if (initial || typeChanged) {
+          // Clear previous state to prevent lingering series (e.g., threshold line → bar) and area fills
+          try { if (this.chart && typeof this.chart.clear === 'function') this.chart.clear(); } catch(e){}
+          this.chart.setOption(base, true, true);
+        } else {
+          // Use merge for regular data updates
+          this.chart.setOption(base, false, true);
+        }
+        this._lastChartType = chartType;
       },
       resize() { if (this.chart) this.chart.resize(); }
     },
@@ -603,61 +620,142 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
           }
           return c;
         });
-        // Limit window size
+        // Decide chart mode: specific parameter → actual values with threshold; 'Semua' → exceedance counts
+        const selectedParam = (this.filters && this.filters.parameter && this.filters.parameter !== 'Semua') ? this.filters.parameter : null;
+        // Base window (months)
         let monthsWin = monthsShort.slice();
-        let countsWin = counts.slice();
         if (monthsWin.length > SAFE_WINDOW_MONTHS) {
           const start = monthsWin.length - SAFE_WINDOW_MONTHS;
           monthsWin = monthsWin.slice(start);
-          countsWin = countsWin.slice(start);
         }
-        // Y-axis scaling similar to Unwell chart
-        const maxVal = countsWin.length ? Math.max(...countsWin) : 0;
-        const niceMax = (function(m){
-          if (m <= 5) return 5;
-          if (m <= 10) return 10;
-          if (m <= 20) return 20;
-          if (m <= 50) return 50;
-          if (m <= 100) return 100;
-          return Math.ceil(m / 50) * 50;
-        })(maxVal);
-        const tickAmt = niceMax <= 10 ? niceMax : (niceMax <= 50 ? 10 : 10);
-        // Prepare ECharts series/options — use 'Unwell' name to reuse label styling
-        const strokeColor = '#ef4444';
-        this.healthExceedSeries = [{ name: 'Unwell', data: countsWin, color: strokeColor }];
-        this.healthExceedOptions = {
-          chartType: this.chartType,
-          tooltip: { trigger: 'axis' },
-          legend: { top: 10 },
-          grid: { left: 40, right: 20, bottom: 40, top: 40 },
-          xAxis: { type: 'category', data: monthsWin },
-          yAxis: { type: 'value', min: 0, max: niceMax, splitNumber: tickAmt, splitLine: { lineStyle: { color: '#e5e7eb' } } },
-          color: [strokeColor]
-        };
-        // Build Health details table: parameters exceeding thresholds per month for selected employee
+        if (selectedParam) {
+          // Build actual per-month values for selected parameter
+          const arrSel = seriesByMetric[selectedParam] || [];
+          const valuesFull = (fullMonthsIso || []).map((mIso) => {
+            const idx = monthToIdx[mIso];
+            const v = (idx == null) ? null : arrSel[idx];
+            const num = typeof v === 'number' ? v : Number(v);
+            return Number.isFinite(num) ? num : null;
+          });
+          let valuesWin = valuesFull.slice();
+          if (valuesWin.length > SAFE_WINDOW_MONTHS) {
+            const start = valuesWin.length - SAFE_WINDOW_MONTHS;
+            valuesWin = valuesWin.slice(start);
+          }
+          const cfg = METRIC_CONFIG[selectedParam] || {};
+          const thr = typeof cfg.threshold === 'number' ? cfg.threshold : null;
+          const unit = this.unitFor(selectedParam);
+          const dataMax = valuesWin.filter(v => Number.isFinite(v)).reduce((mx, v) => Math.max(mx, v), 0);
+          const baseMax = Math.max(dataMax, Number.isFinite(thr) ? thr : 0);
+          const niceMax = (function(m){
+            if (m <= 100) return Math.ceil(Math.max(10, m) / 10) * 10;
+            if (m <= 200) return Math.ceil(m / 20) * 20;
+            if (m <= 300) return Math.ceil(m / 50) * 50;
+            return Math.ceil(m / 100) * 100;
+          })(baseMax);
+          const tickAmt = 10;
+          const dataColor = (cfg.color || '#0ea5e9');
+          const thrColor = '#f59e0b';
+          const seriesArr = [ { name: selectedParam, data: valuesWin, color: dataColor } ];
+          if (Number.isFinite(thr)) {
+            // In bar mode, draw threshold as a horizontal markLine instead of a bar series
+            if ((this.chartType || 'line') === 'bar') {
+              seriesArr[0].markLine = {
+                silent: true,
+                symbol: 'none',
+                lineStyle: { type: 'dashed', color: thrColor, width: 2 },
+                label: { formatter: `${thr} ${unit}`, position: 'end' },
+                data: [ { yAxis: thr } ]
+              };
+            } else {
+              // Line/area: keep threshold as a dashed line series with end label
+              seriesArr.push({
+                name: 'Threshold',
+                data: monthsWin.map(() => thr),
+                color: thrColor,
+                lineStyle: { width: 2, type: 'dashed' },
+                showSymbol: false,
+                endLabel: { show: true, formatter: `${thr} ${unit}` }
+              });
+            }
+          }
+          this.healthExceedSeries = seriesArr;
+          this.healthExceedOptions = {
+            chartType: this.chartType,
+            tooltip: { trigger: 'axis' },
+            legend: { top: 10 },
+            grid: { left: 40, right: 20, bottom: 40, top: 40 },
+            xAxis: { type: 'category', data: monthsWin },
+            yAxis: { type: 'value', min: 0, max: niceMax, splitNumber: tickAmt, splitLine: { lineStyle: { color: '#e5e7eb' } } },
+            color: seriesArr.map(s => s.color)
+          };
+        } else {
+          // Default: exceedance counts per month
+          let countsWin = counts.slice();
+          if (monthsWin.length > SAFE_WINDOW_MONTHS) {
+            const start = monthsWin.length - SAFE_WINDOW_MONTHS;
+            monthsWin = monthsWin.slice(start);
+            countsWin = countsWin.slice(start);
+          }
+          const maxVal = countsWin.length ? Math.max(...countsWin) : 0;
+          const niceMax = (function(m){
+            if (m <= 5) return 5;
+            if (m <= 10) return 10;
+            if (m <= 20) return 20;
+            if (m <= 50) return 50;
+            if (m <= 100) return 100;
+            return Math.ceil(m / 50) * 50;
+          })(maxVal);
+          const tickAmt = niceMax <= 10 ? niceMax : (niceMax <= 50 ? 10 : 10);
+          const strokeColor = '#ef4444';
+          this.healthExceedSeries = [{ name: 'Unwell', data: countsWin, color: strokeColor }];
+          this.healthExceedOptions = {
+            chartType: this.chartType,
+            tooltip: { trigger: 'axis' },
+            legend: { top: 10 },
+            grid: { left: 40, right: 20, bottom: 40, top: 40 },
+            xAxis: { type: 'category', data: monthsWin },
+            yAxis: { type: 'value', min: 0, max: niceMax, splitNumber: tickAmt, splitLine: { lineStyle: { color: '#e5e7eb' } } },
+            color: [strokeColor]
+          };
+        }
+        // Build Health details table: show ALL medical parameters per month for selected employee
         try {
           this.healthExceedDetails = (fullMonthsIso || []).map((mIso) => {
             const idx = monthToIdx[mIso];
             if (idx == null) {
               return { month: mIso, parameters: [] };
             }
-            const exceeded = this.metricsList.map(name => {
+            // Collect all metrics with available values (normal or exceeding)
+            const allMetrics = this.metricsList.map(name => {
               const cfg = METRIC_CONFIG[name];
               const arr = seriesByMetric[name] || [];
               const val = arr[idx];
               const num = typeof val === 'number' ? val : Number(val);
-              const isExceed = cfg && Number.isFinite(num) && num >= cfg.threshold;
-              return isExceed ? { name, value: num } : null;
+              if (!Number.isFinite(num)) return null; // skip if no value
+              const isExceed = cfg && num >= cfg.threshold;
+              return { name, value: num, unit: this.unitFor(name), isExceed };
             }).filter(Boolean);
-            const filtered = (this.filters && this.filters.parameter && this.filters.parameter !== 'Semua') ? exceeded.filter(x => x.name === this.filters.parameter) : exceeded;
+            const filtered = (this.filters && this.filters.parameter && this.filters.parameter !== 'Semua') ? allMetrics.filter(x => x.name === this.filters.parameter) : allMetrics;
             return { month: mIso, parameters: filtered };
           });
           // Reset table page and cap display via computed to max 12 rows
           this.healthExceedTablePage = 1;
         } catch(e) { this.healthExceedDetails = []; }
-        // Total Unwell window: sum counts
-        try { this.totalUnwellWindow = countsWin.reduce((acc, v) => acc + (Number.isFinite(v) ? v : 0), 0); } catch(e) { this.totalUnwellWindow = 0; }
-        console.log('[Diag] Health exceedance chart prepared', { months: monthsWin.length, countsMax: maxVal, selectedParam: this.filters.parameter });
+        // Total Unwell window: for 'Semua' sum counts; for specific parameter, count months exceeding threshold
+        try {
+          const selectedParam2 = (this.filters && this.filters.parameter && this.filters.parameter !== 'Semua') ? this.filters.parameter : null;
+          if (selectedParam2) {
+            const cfg2 = METRIC_CONFIG[selectedParam2] || {};
+            const thr2 = typeof cfg2.threshold==='number' ? cfg2.threshold : null;
+            const vals2 = (this.healthExceedSeries && this.healthExceedSeries[0] && Array.isArray(this.healthExceedSeries[0].data)) ? this.healthExceedSeries[0].data : [];
+            this.totalUnwellWindow = (Number.isFinite(thr2) ? vals2.reduce((acc, v) => acc + ((Number.isFinite(v) && v >= thr2) ? 1 : 0), 0) : 0);
+          } else {
+            const series = this.healthExceedSeries && this.healthExceedSeries[0] ? this.healthExceedSeries[0].data : [];
+            this.totalUnwellWindow = Array.isArray(series) ? series.reduce((acc, v) => acc + (Number.isFinite(v) ? v : 0), 0) : 0;
+          }
+        } catch(e) { this.totalUnwellWindow = 0; }
+        console.log('[Diag] Health chart prepared', { months: monthsWin.length, mode: selectedParam ? 'metric-values' : 'counts', selectedParam: this.filters.parameter });
         this.healthHasData = true;
       },
       async fetchWellUnwellSummary(params){
@@ -881,17 +979,38 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
             // Reassign to a new object to trigger shallow watchers immediately
             this.wellUnwellOptions = Object.assign({}, this.wellUnwellOptions);
           }
+          // Rebuild well/unwell chart to apply type cleanly
+          try {
+            if (this._wellRaw) {
+              this.prepareWellUnwellChart({ months: this._wellRaw.months, unwell_counts: this._wellRaw.unwell });
+            }
+          } catch(e) { console.warn('[Diag] updateChartType well rebuild failed', e); }
         } else {
           if (this.healthExceedOptions) {
             this.healthExceedOptions.chartType = newType;
             // Reassign to a new object to trigger shallow watchers immediately
             this.healthExceedOptions = Object.assign({}, this.healthExceedOptions);
           }
+          // Rebuild health metrics series so threshold rendering matches the selected type
+          try {
+            if (this._healthRaw) {
+              this.prepareHealthExceedChart(this._healthRaw);
+            }
+          } catch(e) { console.warn('[Diag] updateChartType health rebuild failed', e); }
         }
       },
       handleChartTypeUpdate(nextType){
-        // Preserve current dataset (no refetch).
+        // Preserve current dataset (no refetch) but rebuild so thresholds follow bar/line rules
         this.chartType = nextType;
+        try {
+          if (this.tab === 'well') {
+            if (this.wellUnwellOptions) this.wellUnwellOptions.chartType = nextType;
+            if (this._wellRaw) this.prepareWellUnwellChart({ months: this._wellRaw.months, unwell_counts: this._wellRaw.unwell });
+          } else {
+            if (this.healthExceedOptions) this.healthExceedOptions.chartType = nextType;
+            if (this._healthRaw) this.prepareHealthExceedChart(this._healthRaw);
+          }
+        } catch(e) { console.warn('[Diag] handleChartTypeUpdate rebuild failed', e); }
       },
       updateMetricOpacity(){
         console.log('[Diag] Active metric changed', this.activeMetric);
@@ -922,6 +1041,29 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
       // Expose month label formatter for template usage
       monthLabelFromISO(s){
         try { return fmtMonthFullFromISO(s); } catch(e) { return s; }
+      },
+      // Units helper for consistent display across table and legend
+      unitFor(name){
+        try{
+          const map = {
+            'Gula Darah Puasa': 'mg/dL',
+            'Gula Darah Sewaktu': 'mg/dL',
+            'Tekanan Darah': 'mmHg',
+            'Cholesterol': 'mg/dL',
+            'Asam Urat': 'mg/dL'
+          };
+          return map[name] || '';
+        }catch(e){ return ''; }
+      },
+      // Build legend list for thresholds tooltip
+      thresholdLegendList(){
+        try{
+          return (this.metricsList||[]).map(name => {
+            const cfg = METRIC_CONFIG[name] || {};
+            const thr = typeof cfg.threshold==='number' ? cfg.threshold : null;
+            return thr==null ? null : { name, threshold: thr, unit: this.unitFor(name), color: cfg.color || '#64748b' };
+          }).filter(Boolean);
+        }catch(e){ return []; }
       }
     },
     template:`
@@ -1048,16 +1190,33 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
             </div>
           </div>
 
-          <!-- Health Exceed Details Table (Parameter Melebihi Batas per Bulan) -->
+          <!-- Health Details Table (Semua Data Medis per Bulan) -->
           <div v-if="tab==='health'" class="mt-4 bg-white border rounded-lg p-4">
             <div class="flex items-center justify-between mb-2">
-              <h3 class="text-slate-900 font-semibold">Parameter Melebihi Batas per Bulan</h3>
+              <h3 class="text-slate-900 font-semibold">Data Medis per Bulan</h3>
+              <!-- Threshold legend tooltip -->
+              <div class="group relative">
+                <button class="inline-flex items-center gap-1 text-slate-600 hover:text-slate-900">
+                  <i data-lucide="info" class="w-4 h-4"></i>
+                  <span class="text-sm">Thresholds</span>
+                </button>
+                <div class="absolute right-0 mt-2 z-10 hidden group-hover:block bg-white border rounded-md shadow-lg p-3 w-[380px]">
+                  <div class="text-xs text-slate-500 mb-2">Nilai ambang batas (legend)</div>
+                  <div class="flex flex-wrap gap-2">
+                    <span v-for="t in thresholdLegendList()" :key="t.name" class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5" :style="{ borderColor: t.color, backgroundColor: '#f8fafc', color: '#334155' }">
+                      <i data-lucide="info" class="w-3 h-3" :style="{ color: t.color }"></i>
+                      <span class="font-medium">{{ t.name }}</span>
+                      <span class="text-xs">≥ {{ t.threshold }} {{ t.unit }}</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
             <table class="w-full text-sm">
               <thead>
                 <tr class="border-b">
                   <th class="text-left py-2 px-2 w-32">Bulan</th>
-                  <th class="text-left py-2 px-2">Parameter</th>
+                  <th class="text-left py-2 px-2">Data Medis</th>
                 </tr>
               </thead>
               <tbody>
@@ -1065,13 +1224,19 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
                   <td class="py-2 px-2 text-slate-800">{{ monthLabelFromISO(row.month) }}</td>
                   <td class="py-2 px-2">
                     <span v-if="!row.parameters || !row.parameters.length" class="text-slate-500">-</span>
-                    <span v-else class="flex flex-wrap gap-2">
-                      <span v-for="p in row.parameters" :key="p.name + '-' + row.month" class="inline-flex items-center gap-1 rounded-full bg-red-50 text-red-700 border border-red-200 px-2 py-0.5">
-                        <i data-lucide="alert-triangle" class="w-3 h-3"></i>
-                        <span class="font-medium">{{ p.name }}</span>
-                        <span class="text-xs">{{ p.value }}</span>
-                      </span>
-                    </span>
+                    <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <div
+                        v-for="p in row.parameters"
+                        :key="p.name + '-' + row.month"
+                        :class="p.isExceed ? 'flex items-center justify-between rounded-md bg-red-50 text-red-700 border border-red-200 px-2 py-1' : 'flex items-center justify-between rounded-md bg-green-50 text-green-700 border border-green-200 px-2 py-1'"
+                      >
+                        <div class="flex items-center gap-1">
+                          <i :data-lucide="p.isExceed ? 'alert-triangle' : 'check-circle'" class="w-3 h-3"></i>
+                          <span class="font-medium">{{ p.name }}</span>
+                        </div>
+                        <div class="text-xs">{{ p.value }} {{ p.unit }}</div>
+                      </div>
+                    </div>
                   </td>
                 </tr>
               </tbody>
