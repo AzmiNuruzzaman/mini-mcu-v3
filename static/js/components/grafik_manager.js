@@ -432,13 +432,11 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
           try { if (this.tab==='health' && this._healthAbortCtrl) this._healthAbortCtrl.abort(); else if (this.tab==='well' && this._wellAbortCtrl) this._wellAbortCtrl.abort(); } catch(e){}
         }
         this._fetching = true;
+        // Always include month range; defer uid inclusion to health-only branch to decouple tabs
         const params = new URLSearchParams({
-          month_from:this.filters.start_month||'',
-          month_to:this.filters.end_month||'',
-          uid:this.filters.karyawan_uid||''
+          month_from: this.filters.start_month || '',
+          month_to: this.filters.end_month || ''
         });
-        // Compute a simple cache key
-        const baseKey = `${this.filters.start_month}|${this.filters.end_month}|${this.filters.karyawan_uid}`;
         try{
           if(this.tab==='health'){
             // If no karyawan selected, do not fetch; mark as no data for health tab
@@ -450,7 +448,9 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
               this.healthHasData = false;
               return;
             }
-            const key = `H|${baseKey}`;
+            // Health metrics depend on selected karyawan → include uid
+            params.set('uid', this.filters.karyawan_uid);
+            const key = `H|${this.filters.start_month}|${this.filters.end_month}|${this.filters.karyawan_uid}`;
             // If we already have raw data for these filters, reuse without refetch
             if (this._lastHealthKey === key && this._healthRaw) {
               this.prepareHealthExceedChart(this._healthRaw);
@@ -462,7 +462,8 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
             // Well/Unwell grafik respects parameter filter (including "Semua")
             const p = (this.filters.parameter || '').trim();
             if (p) params.set('parameter', p);
-            const key = `W|${baseKey}|${p}`;
+            // Decouple Well tab from karyawan uid
+            const key = `W|${this.filters.start_month}|${this.filters.end_month}|${p}`;
             if (this._lastWellKey === key && this.cachedUnwellData) {
               this.prepareWellUnwellChart(this.cachedUnwellData);
             } else {
@@ -499,7 +500,11 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
           // Prefetch the well/unwell dataset in the background so switching tabs is instant
           try {
             if (!this.cachedUnwellData) {
-              const p = new URLSearchParams(params.toString());
+              const p = new URLSearchParams();
+              p.set('month_from', this.filters.start_month || '');
+              p.set('month_to', this.filters.end_month || '');
+              const param = (this.filters.parameter || '').trim();
+              if (param) p.set('parameter', param);
               setTimeout(() => { this.fetchWellUnwellSummary(p).catch(()=>{}); }, 10);
             }
           } catch(e) { /* noop */ }
@@ -675,7 +680,11 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
         // Prefetch health metrics in the background so switching tabs is instant
         try {
           if (!this._healthRaw) {
-            const p = new URLSearchParams(params.toString());
+            const p = new URLSearchParams();
+            p.set('month_from', this.filters.start_month || '');
+            p.set('month_to', this.filters.end_month || '');
+            // Only prefetch health when a karyawan is selected (health depends on uid)
+            if (this.filters.karyawan_uid) p.set('uid', this.filters.karyawan_uid);
             setTimeout(() => { this.fetchHealthMetrics(p).catch(()=>{}); }, 10);
           }
         } catch(e) { /* noop */ }
