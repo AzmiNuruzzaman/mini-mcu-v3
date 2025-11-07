@@ -47,6 +47,7 @@ from core.helpers import (
     get_active_menu_for_view,
     compute_status,
 )
+from core.core_models import RekomendasiKesehatan
 
 import plotly.graph_objects as go
 import plotly.io as pio
@@ -1375,8 +1376,8 @@ def employee_profile(request, uid):
     if requested_uid and str(requested_uid) != str(uid):
         submenu = request.GET.get("submenu", "edit")
         subtab = request.GET.get("subtab")
-        # Allow known submenu keys: edit, history, data_karyawan
-        if submenu not in ["edit", "history", "data_karyawan", "edit_data"]:
+        # Allow known submenu keys, including newly added 'rekomendasi' and existing 'grafik'
+        if submenu not in ["edit", "history", "data_karyawan", "edit_data", "grafik", "rekomendasi"]:
             submenu = "edit"
         # Normalize: route 'edit' and 'edit_data' under data_karyawan with subtab
         if submenu in ["edit", "edit_data"]:
@@ -1388,8 +1389,8 @@ def employee_profile(request, uid):
     active_submenu = request.GET.get("submenu", "data_karyawan")
     active_subtab = request.GET.get("subtab", "profile")
 
-    # Validate submenu
-    if active_submenu not in ["data_karyawan", "history", "grafik"]:
+    # Validate submenu (allow data_karyawan, history, grafik, rekomendasi)
+    if active_submenu not in ["data_karyawan", "history", "grafik", "rekomendasi"]:
         # Map legacy keys to new structure
         if active_submenu == "edit":
             active_submenu = "data_karyawan"
@@ -4223,6 +4224,246 @@ def health_metrics_summary_json(request):
         return JsonResponse({"x_dates": x_dates, "series": series})
 
 # -------------------------
+# API: Rekomendasi Kesehatan (CRUD)
+# -------------------------
+@require_http_methods(["GET"]) 
+def rekomendasi_list_json(request, uid):
+    """List rekomendasi kesehatan.
+
+    Note: recommendations are now global per-parameter (no longer tied to a specific karyawan).
+    This endpoint returns the global list for backward compatibility.
+
+    Response shape:
+    { "items": [ {"id":1, "parameter":"BMI", "rekomendasi_text":"...", "created_by":"username", "updated_at":"..."}, ... ] }
+    """
+    role = request.session.get("user_role")
+    if not request.session.get("authenticated") or role not in ["Manager", "Tenaga Kesehatan"]:
+        return JsonResponse({"error": "unauthorized"}, status=401)
+
+    try:
+        qs = RekomendasiKesehatan.objects.all().order_by("parameter", "-updated_at")
+        items = []
+        for rec in qs:
+            items.append({
+                "id": rec.id,
+                "parameter": rec.parameter,
+                "rekomendasi_text": rec.rekomendasi_text,
+                "created_by": getattr(getattr(rec, "created_by", None), "username", None),
+                "updated_at": rec.updated_at.isoformat() if rec.updated_at else None,
+            })
+        return JsonResponse({"items": items})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"]) 
+def rekomendasi_create_json(request):
+    """Create or upsert a rekomendasi kesehatan entry.
+
+    Note: recommendations are now global per-parameter.
+    Expected JSON body: { "parameter": "...", "rekomendasi_text": "..." }
+    """
+    role = request.session.get("user_role")
+    if not request.session.get("authenticated") or role not in ["Manager"]:
+        return JsonResponse({"error": "unauthorized"}, status=401)
+    import json
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = {}
+    parameter = (payload.get("parameter") or "").strip()
+    rekomendasi_text = (payload.get("rekomendasi_text") or "").strip()
+    if not parameter or not rekomendasi_text:
+        return JsonResponse({"error":"invalid_input"}, status=400)
+    # Determine created_by user id based on session username
+    username = request.session.get("username") or getattr(getattr(request, "user", None), "username", None)
+    created_by_id = None
+    try:
+        from core.queries import get_user_by_username
+        user_row = get_user_by_username(username)
+        created_by_id = int(user_row.get("id")) if user_row else None
+    except Exception:
+        created_by_id = None
+    try:
+        obj, created = RekomendasiKesehatan.objects.update_or_create(
+            parameter=parameter,
+            defaults={
+                "rekomendasi_text": rekomendasi_text,
+                "created_by_id": created_by_id,
+            }
+        )
+        return JsonResponse({"id": obj.id, "status": "created" if created else "updated"})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["PUT"]) 
+def rekomendasi_update_json(request, rec_id):
+    """Update an existing rekomendasi kesehatan entry by id.
+
+    Expected JSON body: { "parameter": "..."?, "rekomendasi_text": "..." }
+    """
+    role = request.session.get("user_role")
+    if not request.session.get("authenticated") or role not in ["Manager"]:
+        return JsonResponse({"error": "unauthorized"}, status=401)
+    import json
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = {}
+    parameter = (payload.get("parameter") or "").strip() if payload.get("parameter") is not None else None
+    rekomendasi_text = (payload.get("rekomendasi_text") or "").strip()
+    if not rekomendasi_text:
+        return JsonResponse({"error":"invalid_input"}, status=400)
+    try:
+        rec = RekomendasiKesehatan.objects.get(id=int(rec_id))
+        if parameter is not None and parameter.strip():
+            rec.parameter = parameter.strip()
+        rec.rekomendasi_text = rekomendasi_text
+        rec.save(update_fields=["parameter","rekomendasi_text","updated_at"])
+        return JsonResponse({"status":"ok"})
+    except RekomendasiKesehatan.DoesNotExist:
+        return JsonResponse({"error":"not_found"}, status=404)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"]) 
+def rekomendasi_delete_json(request, rec_id):
+    """Delete rekomendasi kesehatan entry by id."""
+    role = request.session.get("user_role")
+    if not request.session.get("authenticated") or role not in ["Manager"]:
+        return JsonResponse({"error": "unauthorized"}, status=401)
+    try:
+        rec = RekomendasiKesehatan.objects.get(id=int(rec_id))
+        rec.delete()
+        return JsonResponse({"status":"ok"})
+    except RekomendasiKesehatan.DoesNotExist:
+        return JsonResponse({"error":"not_found"}, status=404)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+# -------------------------
+# API: Global Rekomendasi Kesehatan (per-parameter, applies to all karyawan)
+# Uses a sentinel UID "GLOBAL" in the same table to avoid schema changes.
+# -------------------------
+@require_http_methods(["GET"]) 
+def rekomendasi_global_list_json(request):
+    """List global rekomendasi kesehatan per-parameter (not tied to karyawan).
+
+    Response shape:
+    { "items": [ {"id":1, "parameter":"BMI", "rekomendasi_text":"...", "created_by":"username", "updated_at":"..."}, ... ] }
+    """
+    role = request.session.get("user_role")
+    if not request.session.get("authenticated") or role not in ["Manager", "Tenaga Kesehatan"]:
+        return JsonResponse({"error": "unauthorized"}, status=401)
+    try:
+        qs = RekomendasiKesehatan.objects.all().order_by("parameter", "-updated_at")
+        items = []
+        for rec in qs:
+            items.append({
+                "id": rec.id,
+                "parameter": rec.parameter,
+                "rekomendasi_text": rec.rekomendasi_text,
+                "created_by": getattr(getattr(rec, "created_by", None), "username", None),
+                "updated_at": rec.updated_at.isoformat() if rec.updated_at else None,
+            })
+        return JsonResponse({"items": items})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"]) 
+def rekomendasi_global_create_json(request):
+    """Create or upsert a global rekomendasi for a parameter.
+
+    Expected JSON body: { "parameter": "...", "rekomendasi_text": "..." }
+    Behaviors:
+    - If a record for the parameter exists, update it; else create.
+    - This keeps the UI's single 'Simpan' button semantics.
+    """
+    role = request.session.get("user_role")
+    if not request.session.get("authenticated") or role not in ["Manager"]:
+        return JsonResponse({"error": "unauthorized"}, status=401)
+    import json
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = {}
+    parameter = (payload.get("parameter") or "").strip()
+    rekomendasi_text = (payload.get("rekomendasi_text") or "").strip()
+    if not parameter or not rekomendasi_text:
+        return JsonResponse({"error":"invalid_input"}, status=400)
+    # Determine created_by user id based on session username
+    username = request.session.get("username") or getattr(getattr(request, "user", None), "username", None)
+    created_by_id = None
+    try:
+        from core.queries import get_user_by_username
+        user_row = get_user_by_username(username)
+        created_by_id = int(user_row.get("id")) if user_row else None
+    except Exception:
+        created_by_id = None
+    try:
+        # Upsert: per-parameter only
+        obj, created = RekomendasiKesehatan.objects.update_or_create(
+            parameter=parameter,
+            defaults={
+                "rekomendasi_text": rekomendasi_text,
+                "created_by_id": created_by_id,
+            }
+        )
+        return JsonResponse({"id": obj.id, "status": "created" if created else "updated"})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["PUT"]) 
+def rekomendasi_global_update_json(request, rec_id):
+    """Update a global rekomendasi by id (kept for completeness)."""
+    role = request.session.get("user_role")
+    if not request.session.get("authenticated") or role not in ["Manager"]:
+        return JsonResponse({"error": "unauthorized"}, status=401)
+    import json
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = {}
+    parameter = (payload.get("parameter") or "").strip() if payload.get("parameter") is not None else None
+    rekomendasi_text = (payload.get("rekomendasi_text") or "").strip()
+    if not rekomendasi_text:
+        return JsonResponse({"error":"invalid_input"}, status=400)
+    try:
+        rec = RekomendasiKesehatan.objects.get(id=int(rec_id))
+        rec.parameter = parameter or rec.parameter
+        rec.rekomendasi_text = rekomendasi_text
+        rec.save(update_fields=["parameter","rekomendasi_text","updated_at"])
+        return JsonResponse({"status":"ok"})
+    except RekomendasiKesehatan.DoesNotExist:
+        return JsonResponse({"error":"not_found"}, status=404)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"]) 
+def rekomendasi_global_delete_json(request, rec_id):
+    """Delete a global rekomendasi entry by id."""
+    role = request.session.get("user_role")
+    if not request.session.get("authenticated") or role not in ["Manager"]:
+        return JsonResponse({"error": "unauthorized"}, status=401)
+    try:
+        rec = RekomendasiKesehatan.objects.get(id=int(rec_id))
+        rec.delete()
+        return JsonResponse({"status":"ok"})
+    except RekomendasiKesehatan.DoesNotExist:
+        return JsonResponse({"error":"not_found"}, status=404)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
 # Tab 5b: Delete Single Employee (trailing duplicate removed)
 # -------------------------
 # Removed trailing duplicate function that was incomplete to prevent override/syntax issues.

@@ -1,5 +1,6 @@
 # core/core_models.py
 from django.db import models
+from django.utils import timezone
 
 # -------------------------
 # Users
@@ -93,3 +94,29 @@ class Checkup(models.Model):
 
     def __str__(self):
         return f"Checkup {self.checkup_id} - {self.uid_id}"
+
+
+# -------------------------
+# Rekomendasi Kesehatan (managed table)
+# -------------------------
+class RekomendasiKesehatan(models.Model):
+    id = models.AutoField(primary_key=True)
+    # Global per-parameter recommendation (no longer tied to specific karyawan)
+    # Parameter name should align with GrafikManager metrics keys (e.g., "BMI", "Tekanan Darah", "Gula Darah Puasa")
+    parameter = models.CharField(max_length=100, unique=True)
+    rekomendasi_text = models.TextField()
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        db_column="created_by",
+        db_constraint=False,
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "rekomendasi_kesehatan"
+        managed = True
+
+    def __str__(self):
+        return f"Rekomendasi[{self.parameter}]"

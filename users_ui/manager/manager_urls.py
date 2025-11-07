@@ -56,6 +56,22 @@ urlpatterns = [
     path("employee/<str:uid>/checkup/<int:checkup_id>/export/pdf/", manager_views.export_checkup_row_pdf, name="export_checkup_row_pdf"),
 
     # ===============================
+    # API: Rekomendasi Kesehatan (CRUD)
+    # ===============================
+    path("api/rekomendasi/<str:uid>/", manager_views.rekomendasi_list_json, name="rekomendasi_list_json"),
+    path("api/rekomendasi/", manager_views.rekomendasi_create_json, name="rekomendasi_create_json"),
+    path("api/rekomendasi/<int:rec_id>/", manager_views.rekomendasi_update_json, name="rekomendasi_update_json"),
+    path("api/rekomendasi/<int:rec_id>/delete/", manager_views.rekomendasi_delete_json, name="rekomendasi_delete_json"),
+
+    # ===============================
+    # API: Global Rekomendasi Kesehatan (per-parameter, applies to all karyawan)
+    # ===============================
+    path("api/rekomendasi_global/", manager_views.rekomendasi_global_list_json, name="rekomendasi_global_list_json"),
+    path("api/rekomendasi_global/create/", manager_views.rekomendasi_global_create_json, name="rekomendasi_global_create_json"),
+    path("api/rekomendasi_global/<int:rec_id>/", manager_views.rekomendasi_global_update_json, name="rekomendasi_global_update_json"),
+    path("api/rekomendasi_global/<int:rec_id>/delete/", manager_views.rekomendasi_global_delete_json, name="rekomendasi_global_delete_json"),
+
+    # ===============================
     # UPLOAD LOG MANAGEMENT
     # ===============================
     path("delete-upload-log/", manager_views.delete_upload_log, name="delete_upload_log"),

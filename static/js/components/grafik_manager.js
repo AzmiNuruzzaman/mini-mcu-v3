@@ -211,7 +211,13 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
         _healthAbortCtrl: null,
         // Simple cache keys to bypass redundant network calls when filters unchanged
         _lastHealthKey: '',
-        _lastWellKey: ''
+        _lastWellKey: '',
+        // Recommendations cache for selected employee
+        recommendations: [],
+        recByParam: {},
+        // Global recommendations cache (per parameter)
+        globalRecByParam: {},
+        _globalRecLoaded: false
       };
     },
     computed:{
@@ -232,8 +238,49 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
           const page = Number(this.healthExceedTablePage) || 1;
           const start = Math.max(0, (page - 1) * size);
           const end = Math.min(total, start + size);
-          return Array.isArray(this.healthExceedDetails) ? this.healthExceedDetails.slice(start, end) : [];
+      return Array.isArray(this.healthExceedDetails) ? this.healthExceedDetails.slice(start, end) : [];
         }catch(e){ return []; }
+      },
+      // Compute current month exceed recommendations mapped to latest saved rekomendasi per parameter
+      currentExceedRecommendations(){
+        try{
+          // Find the latest month (from the end) that actually has exceeded parameters
+          const rows = Array.isArray(this.healthExceedDetails) ? this.healthExceedDetails : [];
+          if (!rows.length) return [];
+          let target = null;
+          for (let i = rows.length - 1; i >= 0; i--) {
+            const r = rows[i];
+            const p = Array.isArray(r.parameters) ? r.parameters.filter(x => x && x.isExceed) : [];
+            if (p.length) { target = { month: r.month, parameters: p }; break; }
+          }
+          if (!target) return [];
+          const params = target.parameters;
+          const out = [];
+          for (const p of params){
+            const name = p.name;
+            const recs = this.recByParam && this.recByParam[name] ? this.recByParam[name] : [];
+            let latest = Array.isArray(recs) && recs.length ? recs[0] : null;
+            // Fallback to global recommendation if no per-employee entry
+            if (!latest && this.globalRecByParam && this.globalRecByParam[name]) {
+              latest = this.globalRecByParam[name];
+            }
+            if (latest && latest.rekomendasi_text){ out.push({ parameter:name, text:String(latest.rekomendasi_text||'') }); }
+          }
+          return out;
+        }catch(e){ return []; }
+      },
+      // Expose the month ISO string that currentExceedRecommendations refers to
+      latestExceedMonthISO(){
+        try{
+          const rows = Array.isArray(this.healthExceedDetails) ? this.healthExceedDetails : [];
+          if (!rows.length) return '';
+          for (let i = rows.length - 1; i >= 0; i--) {
+            const r = rows[i];
+            const p = Array.isArray(r.parameters) ? r.parameters.filter(x => x && x.isExceed) : [];
+            if (p.length) { return r.month || ''; }
+          }
+          return '';
+        }catch(e){ return ''; }
       },
       selectedEmployee(){
         try{
@@ -266,6 +313,8 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
           this.fetchKaryawanList()
         ]);
         await this.fetchData();
+        // Load global recommendations (per-parameter, not tied to a karyawan)
+        try{ this.fetchGlobalRecommendations().catch(()=>{}); }catch(e){}
         // Hide legacy Plotly fallback (if present) after Vue chart is ready
         try { const legacy = document.getElementById('grafik-legacy'); if (legacy) legacy.classList.add('hidden'); } catch(e){}
       } catch(e) {
@@ -473,6 +522,8 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
             // Health metrics depend on selected karyawan → include uid
             params.set('uid', this.filters.karyawan_uid);
             const key = `H|${this.filters.start_month}|${this.filters.end_month}|${this.filters.karyawan_uid}`;
+            // Recommendations are global per-parameter; ensure global recommendations are loaded
+            try{ if(!this._globalRecLoaded) await this.fetchGlobalRecommendations(); }catch(e){}
             // If we already have raw data for these filters, reuse without refetch
             if (this._lastHealthKey === key && this._healthRaw) {
               this.prepareHealthExceedChart(this._healthRaw);
@@ -763,6 +814,39 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
         console.log('[Diag] Health chart prepared', { months: monthsWin.length, mode: selectedParam ? 'metric-values' : 'counts', selectedParam: this.filters.parameter });
         this.healthHasData = true;
       },
+      // Per-employee recommendations removed; recommendations are global per-parameter
+      async fetchGlobalRecommendations(){
+        try{
+          const fetchList = async (base)=>{
+            try{
+              const res = await fetch(`${base}/api/rekomendasi_global/`, { headers:{'Accept':'application/json'} });
+              if(!res.ok) return null;
+              return await res.json();
+            }catch(err){ return null; }
+          };
+          // Try current base first (supports manager, nurse, karyawan routes)
+          let payload = await fetchList(API_BASE);
+          // Fallback to manager API if nurse/karyawan route doesn't serve global recommendations
+          if (!payload) {
+            payload = await fetchList('/manager');
+          }
+          if (!payload) {
+            console.warn('[GrafikManager] global rekomendasi fetch failed on all bases');
+            this.globalRecByParam = {};
+            this._globalRecLoaded = true; // Avoid repeated retries per fetch cycle
+            return;
+          }
+          const items = Array.isArray(payload) ? payload : (Array.isArray(payload.items) ? payload.items : []);
+          const map = {};
+          for(const item of items){
+            const p = String(item.parameter||''); if(!p) continue;
+            const rec = { parameter:p, rekomendasi_text:item.rekomendasi_text||'', updated_at:item.updated_at||item.created_at||'' };
+            if(!map[p]) map[p] = rec;
+          }
+          this.globalRecByParam = map;
+          this._globalRecLoaded = true;
+        }catch(e){ console.warn('[GrafikManager] fetchGlobalRecommendations error', e); this.globalRecByParam = {}; }
+      },
       async fetchWellUnwellSummary(params){
         try{
           // Abort any previous well/unwell fetch to prevent overlapping updates
@@ -1047,6 +1131,28 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
       monthLabelFromISO(s){
         try { return fmtMonthFullFromISO(s); } catch(e) { return s; }
       },
+      // Convert raw text to safe HTML with clickable links (http/https)
+      linkifyText(raw){
+        try{
+          const text = String(raw||'');
+          const escapeHtml = (str)=>str.replace(/[&<>"']/g, (ch)=>({
+            '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+          })[ch]);
+          const urlRegex = /(https?:\/\/[^\s]+)/g;
+          let result = '';
+          let lastIndex = 0;
+          for (const m of text.matchAll(urlRegex)){
+            const idx = m.index || 0;
+            const url = m[0];
+            result += escapeHtml(text.slice(lastIndex, idx));
+            const display = escapeHtml(url);
+            result += `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">${display}</a>`;
+            lastIndex = idx + url.length;
+          }
+          result += escapeHtml(text.slice(lastIndex));
+          return result;
+        }catch(e){ return String(raw||''); }
+      },
       // Units helper for consistent display across table and legend
       unitFor(name){
         try{
@@ -1191,6 +1297,47 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
               <div class="text-center text-slate-600">
                 <div class="text-lg font-semibold mb-1">Tidak ada data untuk filter ini</div>
                 <div class="text-sm">Jika Anda sudah memilih karyawan, sistem akan menampilkan seluruh riwayat secara otomatis.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recommendation snippet container: fancy section between graph and data table -->
+          <div v-if="tab==='health' && currentExceedRecommendations.length" class="mt-4 bg-white border rounded-xl shadow-sm">
+            <!-- Header -->
+            <div class="px-4 pt-4">
+              <div class="flex items-center gap-2">
+                <i data-lucide="sparkles" class="w-4 h-4 text-amber-600"></i>
+                <h3 class="text-slate-900 font-semibold">Rekomendasi Kesehatan</h3>
+                <span class="ml-2 inline-flex items-center rounded-full bg-amber-100 text-amber-900 px-2 py-0.5 text-xs font-semibold border border-amber-200">{{ monthLabelFromISO(latestExceedMonthISO) }}</span>
+              </div>
+              <div class="mt-1 text-xs text-slate-500">Sumber: rekomendasi global per parameter</div>
+              <div class="mt-2 h-px bg-gradient-to-r from-amber-200 via-amber-300 to-transparent"></div>
+            </div>
+            <!-- Body: stylized recommendation cards -->
+            <div class="px-4 pb-4 mt-3">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div
+                  v-for="r in currentExceedRecommendations"
+                  :key="r.parameter"
+                  class="group relative rounded-lg border border-amber-200 bg-amber-50/60 hover:bg-amber-50 shadow-sm hover:shadow-md transition-shadow"
+                >
+                  <div class="flex items-start gap-3 px-3 py-2">
+                    <div class="mt-0.5">
+                      <i data-lucide="lightbulb" class="w-4 h-4 text-amber-600"></i>
+                    </div>
+                    <div class="flex-1">
+                      <div class="flex items-center gap-2 mb-1">
+                        <span class="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-900 px-2 py-0.5 text-xs font-semibold border border-amber-200">{{ r.parameter }}</span>
+                      </div>
+                      <div class="text-sm leading-snug text-amber-900">
+                        <span v-html="linkifyText(r.text)"></span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <i data-lucide="external-link" class="w-3.5 h-3.5 text-amber-500"></i>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

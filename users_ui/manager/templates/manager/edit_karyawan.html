@@ -40,6 +40,13 @@
                 {% if active_submenu == 'grafik' %}bg-blue-600 text-white border-blue-600{% endif %}">
           Grafik
       </a>
+      {% if not view_only %}
+      <a href="?submenu=rekomendasi" 
+         class="pb-3 px-4 font-medium text-gray-700 hover:bg-slate-100 rounded-t-md border border-slate-300 -mb-px transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300
+                {% if active_submenu == 'rekomendasi' %}bg-blue-600 text-white border-blue-600{% endif %}">
+          Rekomendasi Kesehatan
+      </a>
+      {% endif %}
   </div>
 
   {% if active_submenu == 'data_karyawan' %}
@@ -482,6 +489,421 @@
         </div>
       </form>
       <p class="mt-2 text-xs text-gray-500">Catatan: jika tanggal tidak diisi, sistem akan menggunakan tanggal hari ini.</p>
+  </div>
+  {% endif %}
+
+  {% if not view_only %}
+  <!-- Rekomendasi Kesehatan Content (moved to top-level submenu) -->
+  <div id="rekomendasi-tab" class="rounded-xl border border-slate-300 shadow-sm bg-white p-4 {% if active_submenu != 'rekomendasi' %}hidden{% endif %}">
+      <h2 class="text-xl font-bold mb-3">Rekomendasi Kesehatan (Global)</h2>
+      <p class="text-sm text-gray-600 mb-3">Input rekomendasi per parameter secara global. Rekomendasi akan berlaku otomatis untuk karyawan yang memiliki parameter <span class="font-semibold">unwell</span>.</p>
+
+      <!-- Fancy intro banner -->
+      <div class="mb-3 inline-flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm shadow-sm">
+        <div class="flex-shrink-0 mt-0.5">💡</div>
+        <div>
+          <div class="font-medium text-slate-800">Rekomendasi Kesehatan (Global)</div>
+          <div class="text-slate-600">Isi rekomendasi per parameter. Gunakan “Simpan semua” untuk menyimpan massal. Rekomendasi berlaku otomatis saat parameter karyawan tidak normal.</div>
+        </div>
+      </div>
+
+      <!-- Input areas for each parameter (no dropdown; direct inputs) -->
+      <h3 class="text-slate-900 font-semibold mb-2">Input Rekomendasi Per Parameter</h3>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="rekomendasi-inputs">
+        {% comment %} Django templates do not have a built-in 'split' filter. Render inputs explicitly. {% endcomment %}
+        <div class="p-4 border rounded-lg bg-white shadow-sm">
+          <label class="block font-semibold mb-1">Gula Darah Puasa</label>
+          <textarea data-param="Gula Darah Puasa" class="w-full border px-2 py-1 rounded min-h-[100px]" placeholder="Masukkan rekomendasi untuk parameter Gula Darah Puasa..."></textarea>
+          <div class="mt-1 flex justify-between text-xs text-slate-500"><span data-char-count="Gula Darah Puasa">0 karakter</span><span>Tekan Simpan untuk menyimpan</span></div>
+          <div class="mt-2 flex justify-end">
+            <button type="button" data-save="Gula Darah Puasa" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Simpan</button>
+          </div>
+        </div>
+        <div class="p-4 border rounded-lg bg-white shadow-sm">
+          <label class="block font-semibold mb-1">Gula Darah Sewaktu</label>
+          <textarea data-param="Gula Darah Sewaktu" class="w-full border px-2 py-1 rounded min-h-[100px]" placeholder="Masukkan rekomendasi untuk parameter Gula Darah Sewaktu..."></textarea>
+          <div class="mt-1 flex justify-between text-xs text-slate-500"><span data-char-count="Gula Darah Sewaktu">0 karakter</span><span>Tekan Simpan untuk menyimpan</span></div>
+          <div class="mt-2 flex justify-end">
+            <button type="button" data-save="Gula Darah Sewaktu" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Simpan</button>
+          </div>
+        </div>
+        <div class="p-4 border rounded-lg bg-white shadow-sm">
+          <label class="block font-semibold mb-1">Tekanan Darah</label>
+          <textarea data-param="Tekanan Darah" class="w-full border px-2 py-1 rounded min-h-[100px]" placeholder="Masukkan rekomendasi untuk parameter Tekanan Darah..."></textarea>
+          <div class="mt-1 flex justify-between text-xs text-slate-500"><span data-char-count="Tekanan Darah">0 karakter</span><span>Tekan Simpan untuk menyimpan</span></div>
+          <div class="mt-2 flex justify-end">
+            <button type="button" data-save="Tekanan Darah" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Simpan</button>
+          </div>
+        </div>
+        <div class="p-4 border rounded-lg bg-white shadow-sm">
+          <label class="block font-semibold mb-1">Cholesterol</label>
+          <textarea data-param="Cholesterol" class="w-full border px-2 py-1 rounded min-h-[100px]" placeholder="Masukkan rekomendasi untuk parameter Cholesterol..."></textarea>
+          <div class="mt-1 flex justify-between text-xs text-slate-500"><span data-char-count="Cholesterol">0 karakter</span><span>Tekan Simpan untuk menyimpan</span></div>
+          <div class="mt-2 flex justify-end">
+            <button type="button" data-save="Cholesterol" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Simpan</button>
+          </div>
+        </div>
+        <div class="p-4 border rounded-lg bg-white shadow-sm">
+          <label class="block font-semibold mb-1">Asam Urat</label>
+          <textarea data-param="Asam Urat" class="w-full border px-2 py-1 rounded min-h-[100px]" placeholder="Masukkan rekomendasi untuk parameter Asam Urat..."></textarea>
+          <div class="mt-1 flex justify-between text-xs text-slate-500"><span data-char-count="Asam Urat">0 karakter</span><span>Tekan Simpan untuk menyimpan</span></div>
+          <div class="mt-2 flex justify-end">
+            <button type="button" data-save="Asam Urat" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Simpan</button>
+          </div>
+        </div>
+        <div class="p-4 border rounded-lg bg-white shadow-sm">
+          <label class="block font-semibold mb-1">Lingkar Perut</label>
+          <textarea data-param="Lingkar Perut" class="w-full border px-2 py-1 rounded min-h-[100px]" placeholder="Masukkan rekomendasi untuk parameter Lingkar Perut..."></textarea>
+          <div class="mt-1 flex justify-between text-xs text-slate-500"><span data-char-count="Lingkar Perut">0 karakter</span><span>Tekan Simpan untuk menyimpan</span></div>
+          <div class="mt-2 flex justify-end">
+            <button type="button" data-save="Lingkar Perut" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Simpan</button>
+          </div>
+        </div>
+        <div class="p-4 border rounded-lg bg-white shadow-sm">
+          <label class="block font-semibold mb-1">BMI</label>
+          <textarea data-param="BMI" class="w-full border px-2 py-1 rounded min-h-[100px]" placeholder="Masukkan rekomendasi untuk parameter BMI..."></textarea>
+          <div class="mt-1 flex justify-between text-xs text-slate-500"><span data-char-count="BMI">0 karakter</span><span>Tekan Simpan untuk menyimpan</span></div>
+          <div class="mt-2 flex justify-end">
+            <button type="button" data-save="BMI" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Simpan</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Global action: Simpan semua rekomendasi (placed above the list/df) -->
+      <div class="mt-3 border-t pt-3 rounded-lg bg-slate-50/60 px-3 py-2 flex items-center justify-between">
+        <div class="text-xs text-slate-600">Tips: Isi beberapa rekomendasi sekaligus, lalu gunakan tombol hijau untuk menyimpan massal.</div>
+        <button type="button" id="save-all-rekomendasi" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Simpan semua</button>
+      </div>
+
+      <!-- Section divider to clearly separate inputs and list/df -->
+      <div class="mt-4">
+        <div class="flex items-center gap-2 text-slate-500">
+          <div class="h-px bg-slate-200 flex-1"></div>
+          <div class="text-xs uppercase tracking-wide">Daftar Tersimpan</div>
+          <div class="h-px bg-slate-200 flex-1"></div>
+        </div>
+      </div>
+
+      <!-- Existing rekomendasi list -->
+      <div class="mt-6">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-lg font-semibold">Daftar Rekomendasi Tersimpan</h3>
+          <button type="button" id="delete-all-rekomendasi" class="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700">Hapus semua</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="min-w-full table-auto border-collapse border border-gray-300" id="rekomendasi-table">
+            <thead>
+              <tr class="bg-gray-100">
+                <th class="border px-2 py-1 text-left">Parameter</th>
+                <th class="border px-2 py-1 text-left">Rekomendasi</th>
+                <th class="border px-2 py-1 text-left">Dibuat Oleh</th>
+                <th class="border px-2 py-1 text-left">Diupdate</th>
+                <th class="border px-2 py-1">Aksi</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Minimal JS for CRUD operations -->
+      <script>
+      (function(){
+        const API_BASE = "/manager";
+        const listURL = `${API_BASE}/api/rekomendasi_global/`;
+        const createURL = `${API_BASE}/api/rekomendasi_global/create/`;
+        const paramIds = {}; // param name -> rec id
+
+        async function loadList(){
+          try{
+            const res = await fetch(listURL, { headers: { 'Accept': 'application/json' } });
+            const data = await res.json();
+            const tbody = document.querySelector('#rekomendasi-table tbody');
+            tbody.innerHTML = '';
+            // Reset paramIds mapping to avoid stale IDs after deletions
+            try{ Object.keys(paramIds).forEach(k=>{ delete paramIds[k]; }); }catch(e){}
+            (data.items || []).forEach(item => {
+              paramIds[item.parameter] = item.id;
+              // Pre-fill textarea if matches
+              const ta = document.querySelector(`textarea[data-param="${item.parameter}"]`);
+              if (ta) ta.value = item.rekomendasi_text || '';
+              // Update char count after prefill
+              try {
+                const cnt = document.querySelector(`[data-char-count="${item.parameter}"]`);
+                if (cnt && ta) cnt.textContent = `${(ta.value||'').length} karakter`;
+              } catch(e){}
+              // linkify helper to convert URLs to anchors safely
+              const escapeHtml = (str)=>String(str||'').replace(/[&<>"']/g, (ch)=>({
+                '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;'
+              })[ch]);
+              const linkifyHtml = (raw)=>{
+                try{
+                  const text = String(raw||'');
+                  const urlRegex = /(https?:\/\/[^\s]+)/g;
+                  let result = '';
+                  let lastIndex = 0;
+                  for (const m of text.matchAll(urlRegex)){
+                    const idx = m.index || 0;
+                    const url = m[0];
+                    result += escapeHtml(text.slice(lastIndex, idx));
+                    const display = escapeHtml(url);
+                    result += `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">${display}</a>`;
+                    lastIndex = idx + url.length;
+                  }
+                  result += escapeHtml(text.slice(lastIndex));
+                  return result;
+                }catch(e){ return escapeHtml(raw||''); }
+              };
+              const tr = document.createElement('tr');
+              tr.innerHTML = `
+                <td class="border px-2 py-1 align-top">${item.parameter}</td>
+                <td class="border px-2 py-1">
+                  <div class="rekomendasi-view whitespace-pre-line">${linkifyHtml(item.rekomendasi_text || '')}</div>
+                  <div class="rekomendasi-edit hidden">
+                    <textarea class="w-full border px-2 py-1 rounded min-h-[80px]" data-edit-textarea="${item.id}">${item.rekomendasi_text || ''}</textarea>
+                    <div class="mt-2 flex gap-2">
+                      <button type="button" class="bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700" data-save-edit="${item.id}" data-param="${item.parameter}">Simpan</button>
+                      <button type="button" class="bg-slate-200 text-slate-800 px-2 py-1 rounded hover:bg-slate-300" data-cancel-edit="${item.id}">Batal</button>
+                    </div>
+                  </div>
+                </td>
+                <td class="border px-2 py-1">${item.created_by || '-'}</td>
+                <td class="border px-2 py-1">${item.updated_at ? new Date(item.updated_at).toLocaleString() : '-'}</td>
+                <td class="border px-2 py-1 text-center">
+                  <div class="flex justify-center gap-3">
+                    <button type="button" class="text-blue-700 hover:underline" data-edit="${item.id}">Edit</button>
+                    <button type="button" class="text-red-700 hover:underline" data-del="${item.id}">Hapus</button>
+                  </div>
+                </td>
+              `;
+              tbody.appendChild(tr);
+            });
+            // bind delete handlers
+            tbody.querySelectorAll('button[data-del]').forEach(btn => {
+              btn.addEventListener('click', async () => {
+                const id = btn.getAttribute('data-del');
+                try{
+                  await fetch(`${API_BASE}/api/rekomendasi_global/${id}/delete/`, { method: 'DELETE' });
+                  await loadList();
+                }catch(e){ console.error(e); }
+              });
+            });
+            // bind inline edit handlers
+            tbody.querySelectorAll('button[data-edit]').forEach(btn => {
+              btn.addEventListener('click', () => {
+                const row = btn.closest('tr');
+                if (!row) return;
+                const view = row.querySelector('.rekomendasi-view');
+                const edit = row.querySelector('.rekomendasi-edit');
+                if (view && edit){
+                  view.classList.add('hidden');
+                  edit.classList.remove('hidden');
+                }
+              });
+            });
+            tbody.querySelectorAll('button[data-cancel-edit]').forEach(btn => {
+              btn.addEventListener('click', () => {
+                const row = btn.closest('tr');
+                if (!row) return;
+                const view = row.querySelector('.rekomendasi-view');
+                const edit = row.querySelector('.rekomendasi-edit');
+                if (view && edit){
+                  edit.classList.add('hidden');
+                  view.classList.remove('hidden');
+                }
+              });
+            });
+            tbody.querySelectorAll('button[data-save-edit]').forEach(btn => {
+              btn.addEventListener('click', async () => {
+                const id = btn.getAttribute('data-save-edit');
+                const paramName = btn.getAttribute('data-param') || '';
+                const row = btn.closest('tr');
+                if (!row) return;
+                const ta = row.querySelector(`textarea[data-edit-textarea="${id}"]`);
+                const text = (ta && ta.value ? ta.value : '').trim();
+                if (!text){ alert('Teks rekomendasi kosong.'); return; }
+                const original = btn.textContent;
+                btn.disabled = true;
+                btn.textContent = 'Menyimpan...';
+                btn.classList.add('opacity-50','cursor-not-allowed');
+                try{
+                  const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+                  const body = JSON.stringify({ parameter: paramName, rekomendasi_text: text });
+                  await fetch(`${API_BASE}/api/rekomendasi_global/${id}/`, { method: 'PUT', headers, body });
+                  await loadList();
+                }catch(e){
+                  console.error(e);
+                  alert('Gagal menyimpan perubahan.');
+                  btn.textContent = 'Gagal ❌';
+                  setTimeout(() => { btn.textContent = original || 'Simpan'; }, 1200);
+                } finally {
+                  btn.disabled = false;
+                  btn.classList.remove('opacity-50','cursor-not-allowed');
+                }
+              });
+            });
+          }catch(e){ console.error(e); }
+        }
+
+        async function saveParam(param){
+          const ta = document.querySelector(`textarea[data-param="${param}"]`);
+          if (!ta) return;
+          const text = (ta.value || '').trim();
+          if (!text) { alert('Teks rekomendasi kosong.'); return; }
+          const btn = document.querySelector(`button[data-save="${param}"]`);
+          const originalLabel = btn ? btn.textContent : '';
+          // Set disabled UI state
+          if (btn){
+            btn.disabled = true;
+            btn.textContent = 'Menyimpan...';
+            btn.classList.add('opacity-50','cursor-not-allowed');
+          }
+          try{
+            const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+            const body = JSON.stringify({ parameter: param, rekomendasi_text: text });
+            if (paramIds[param]){
+              await fetch(`${API_BASE}/api/rekomendasi_global/${paramIds[param]}/`, { method: 'PUT', headers, body });
+            } else {
+              const res = await fetch(createURL, { method: 'POST', headers, body });
+              const j = await res.json();
+              if (j && j.id) paramIds[param] = j.id;
+            }
+            // Success feedback
+            if (btn){
+              btn.textContent = 'Tersimpan ✓';
+              setTimeout(() => {
+                btn.textContent = originalLabel || 'Simpan';
+              }, 1000);
+            }
+            await loadList();
+          }catch(e){
+            console.error(e);
+            alert('Gagal menyimpan rekomendasi.');
+            if (btn){
+              btn.textContent = 'Gagal ❌';
+              setTimeout(() => {
+                btn.textContent = originalLabel || 'Simpan';
+              }, 1200);
+            }
+          } finally {
+            // Restore button state
+            if (btn){
+              btn.disabled = false;
+              btn.classList.remove('opacity-50','cursor-not-allowed');
+            }
+          }
+        }
+
+        async function saveAll(){
+          const btnAll = document.getElementById('save-all-rekomendasi');
+          const original = btnAll ? btnAll.textContent : '';
+          try{
+            const areas = Array.from(document.querySelectorAll('#rekomendasi-inputs textarea[data-param]'));
+            const items = areas.map(ta => ({ param: ta.dataset.param, text: (ta.value||'').trim() }))
+                               .filter(it => it.text.length > 0);
+            if (!items.length) { alert('Tidak ada rekomendasi yang diisi.'); return; }
+            if (!confirm('Yakin ingin menyimpan SEMUA rekomendasi yang terisi?')) { return; }
+            if (btnAll){
+              btnAll.disabled = true;
+              btnAll.textContent = 'Menyimpan semua...';
+              btnAll.classList.add('opacity-50','cursor-not-allowed');
+            }
+            const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+            for (const it of items){
+              const body = JSON.stringify({ parameter: it.param, rekomendasi_text: it.text });
+              if (paramIds[it.param]){
+                await fetch(`${API_BASE}/api/rekomendasi_global/${paramIds[it.param]}/`, { method: 'PUT', headers, body });
+              } else {
+                const res = await fetch(createURL, { method: 'POST', headers, body });
+                const j = await res.json();
+                if (j && j.id) paramIds[it.param] = j.id;
+              }
+            }
+            if (btnAll){ btnAll.textContent = 'Tersimpan semua ✓'; }
+            await loadList();
+          }catch(e){
+            console.error(e);
+            alert('Gagal menyimpan sebagian/semua rekomendasi.');
+            if (btnAll){ btnAll.textContent = 'Gagal ❌'; }
+          }finally{
+            if (btnAll){
+              setTimeout(() => { btnAll.textContent = original || 'Simpan semua'; }, 1200);
+              btnAll.disabled = false;
+              btnAll.classList.remove('opacity-50','cursor-not-allowed');
+            }
+          }
+        }
+
+        async function deleteAll(){
+          const btnDelAll = document.getElementById('delete-all-rekomendasi');
+          const original = btnDelAll ? btnDelAll.textContent : '';
+          try{
+            const tbody = document.querySelector('#rekomendasi-table tbody');
+            const delBtns = Array.from(tbody.querySelectorAll('button[data-del]'));
+            if (!delBtns.length) { alert('Tidak ada rekomendasi untuk dihapus.'); return; }
+            if (!confirm('Yakin ingin menghapus SEMUA rekomendasi global? Tindakan ini tidak dapat dibatalkan.')) { return; }
+            if (btnDelAll){
+              btnDelAll.disabled = true;
+              btnDelAll.textContent = 'Menghapus semua...';
+              btnDelAll.classList.add('opacity-50','cursor-not-allowed');
+            }
+            for (const b of delBtns){
+              const id = b.getAttribute('data-del');
+              try{ await fetch(`${API_BASE}/api/rekomendasi_global/${id}/delete/`, { method: 'DELETE' }); }catch(e){ console.error(e); }
+            }
+            if (btnDelAll){ btnDelAll.textContent = 'Terhapus semua ✓'; }
+            await loadList();
+          }catch(e){
+            console.error(e);
+            alert('Gagal menghapus sebagian/semua rekomendasi.');
+            if (btnDelAll){ btnDelAll.textContent = 'Gagal ❌'; }
+          }finally{
+            if (btnDelAll){
+              setTimeout(() => { btnDelAll.textContent = original || 'Hapus semua'; }, 1200);
+              btnDelAll.disabled = false;
+              btnDelAll.classList.remove('opacity-50','cursor-not-allowed');
+            }
+          }
+        }
+
+        // Bind save events
+        document.querySelectorAll('#rekomendasi-inputs button[data-save]').forEach(btn => {
+          const param = btn.getAttribute('data-save');
+          btn.addEventListener('click', () => saveParam(param));
+        });
+
+        // Initialize fancy char counters and live updates
+        (function initCharCounts(){
+          try{
+            document.querySelectorAll('#rekomendasi-inputs textarea[data-param]').forEach(ta => {
+              const param = ta.getAttribute('data-param');
+              const cnt = document.querySelector(`[data-char-count="${param}"]`);
+              if (cnt){ cnt.textContent = `${(ta.value||'').length} karakter`; }
+              ta.addEventListener('input', () => {
+                try { if (cnt) cnt.textContent = `${(ta.value||'').length} karakter`; } catch(e){}
+              });
+            });
+          }catch(e){ console.error(e); }
+        })();
+
+        // Bind bulk save
+        const btnAll = document.getElementById('save-all-rekomendasi');
+        if (btnAll) {
+          btnAll.addEventListener('click', () => { try{ saveAll(); }catch(e){ console.error(e); } });
+        }
+
+        // Bind bulk delete
+        const btnDelAll = document.getElementById('delete-all-rekomendasi');
+        if (btnDelAll) {
+          btnDelAll.addEventListener('click', () => { try{ deleteAll(); }catch(e){ console.error(e); } });
+        }
+
+        // Initial load when tab is present
+        if (document.getElementById('rekomendasi-tab')){
+          loadList();
+        }
+      })();
+      </script>
   </div>
   {% endif %}
 

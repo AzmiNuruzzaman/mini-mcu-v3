@@ -1158,8 +1158,10 @@ def nurse_karyawan_detail(request, uid):
     except Exception:
         pass
 
-    # Dynamically control view-only mode: enable inline editing on History tab
-    view_only_flag = False if active_submenu == "history" else True
+    # Dynamically control view-only mode:
+    # - Enable inline editing on History tab
+    # - Allow editing for the new Rekomendasi Kesehatan tab
+    view_only_flag = False if active_submenu in ["history", "rekomendasi"] else True
 
     # --- Employee avatar URL (if exists) and upload URL ---
     employee_avatar_url = None
