@@ -297,6 +297,25 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
           return keys.map(k => ({ parameter: k, text: String((map[k] && map[k].rekomendasi_text) || '') }))
                      .filter(x => x.text && x.text.trim().length > 0);
         }catch(e){ return []; }
+      },
+      // Only show recommendation text when the selected karyawan actually has medical data
+      hasHealthDataForSelection(){
+        try{
+          const details = Array.isArray(this.healthExceedDetails) ? this.healthExceedDetails : [];
+          for (const row of details){
+            if (Array.isArray(row.parameters) && row.parameters.length > 0) return true;
+          }
+          // Fallback: inspect cached raw health series
+          const raw = this._healthRaw || null;
+          if (raw && raw.series){
+            const keys = Object.keys(raw.series||{});
+            for(const k of keys){
+              const arr = Array.isArray(raw.series[k]) ? raw.series[k] : [];
+              if (arr.some(v => Number.isFinite(typeof v==='number'? v : Number(v)))) return true;
+            }
+          }
+          return false;
+        }catch(e){ return false; }
       }
     },
     async mounted(){
@@ -1311,7 +1330,7 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
           </div>
 
           <!-- Recommendation snippet container: fancy section between graph and data table -->
-          <div v-if="tab==='health' && currentExceedRecommendations.length" class="mt-4 bg-white border rounded-xl shadow-sm">
+          <div v-if="tab==='health' && hasHealthDataForSelection && currentExceedRecommendations.length" class="mt-4 bg-white border rounded-xl shadow-sm">
             <!-- Header -->
             <div class="px-4 pt-4">
               <div class="flex items-center gap-2">
@@ -1351,7 +1370,7 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
             </div>
           </div>
           <!-- Fallback: show global recommendations list when no exceed recommendations (public QR view) -->
-          <div v-else-if="tab==='health' && globalRecommendationList.length" class="mt-4 bg-white border rounded-xl shadow-sm">
+          <div v-else-if="tab==='health' && hasHealthDataForSelection && globalRecommendationList.length" class="mt-4 bg-white border rounded-xl shadow-sm">
             <div class="px-4 pt-4">
               <div class="flex items-center gap-2">
                 <i data-lucide="sparkles" class="w-4 h-4 text-amber-600"></i>
