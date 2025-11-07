@@ -1,6 +1,7 @@
 # users_interface/karyawan_views.py
 from django.shortcuts import render
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
+from django.views.decorators.http import require_http_methods
 import pandas as pd
 from core.queries import load_checkups, get_employee_by_uid
 from core.helpers import compute_status
@@ -312,3 +313,161 @@ def karyawan_landing(request):
     }
 
     return render(request, "manager/edit_karyawan.html", context)
+
+
+# -------------------------
+# Minimal Grafik JSON for Karyawan (read-only, scoped to current UID)
+# -------------------------
+
+def _get_uid_from_request(request):
+    """Best-effort UID extraction: prefer explicit GET param; fallback to Referer query string."""
+    uid = (request.GET.get('uid') or '').strip()
+    if uid:
+        return uid
+    try:
+        from urllib.parse import urlparse, parse_qs
+        ref = request.META.get('HTTP_REFERER', '')
+        if ref:
+            qs = parse_qs(urlparse(ref).query)
+            cand = qs.get('uid', [''])[0]
+            if cand:
+                return str(cand)
+    except Exception:
+        pass
+    return ''
+
+
+@require_http_methods(["GET"])
+def karyawan_list_json(request):
+    """Return only the current karyawan (uid + nama) for QR view.
+
+    Response: { "karyawan": [ {"uid": "...", "nama": "..."} ] }
+    """
+    uid = _get_uid_from_request(request)
+    if not uid:
+        return JsonResponse({"karyawan": []})
+    try:
+        emp_raw = get_employee_by_uid(uid)
+        emp = emp_raw.to_dict() if hasattr(emp_raw, 'to_dict') else emp_raw
+        nama = (emp or {}).get('nama') or ''
+        return JsonResponse({"karyawan": [{"uid": str(uid), "nama": str(nama)}]})
+    except Exception:
+        return JsonResponse({"karyawan": []})
+
+
+@require_http_methods(["GET"])
+def health_metrics_summary_json(request):
+    """Return monthly averages for 5 health metrics for a single karyawan UID.
+
+    Response shape matches manager endpoint:
+    { "x_dates": ["YYYY-MM", ...], "series": {"Gula Darah Puasa": [...], ...} }
+    """
+    uid_filter = _get_uid_from_request(request)
+    month_from = (request.GET.get('month_from') or '').strip()
+    month_to = (request.GET.get('month_to') or '').strip()
+
+    try:
+        df = load_checkups()
+    except Exception:
+        df = None
+    if df is None or not hasattr(df, 'empty') or df.empty:
+        return JsonResponse({"x_dates": [], "series": {}})
+
+    # Determine a date column
+    date_col = None
+    for cand in ["tanggal_checkup", "tanggal_periksa", "Tanggal Pemeriksaan", "tanggal"]:
+        if cand in df.columns:
+            date_col = cand
+            break
+    if not date_col:
+        return JsonResponse({"x_dates": [], "series": {}})
+
+    import pandas as _pd
+    from datetime import datetime as _dt
+
+    # Parse dates and drop NaT
+    try:
+        df[date_col] = _pd.to_datetime(df[date_col], errors='coerce')
+    except Exception:
+        pass
+    df = df.dropna(subset=[date_col])
+
+    # Apply UID filter strictly (only current employee)
+    if uid_filter:
+        try:
+            df = df[df['uid'].astype(str) == str(uid_filter)]
+        except Exception:
+            pass
+
+    # Month range filter
+    start_date = None
+    end_date = None
+    try:
+        if month_from:
+            y, m = [int(x) for x in str(month_from).split('-')[:2]]
+            start_date = _dt(y, m, 1)
+        if month_to:
+            y2, m2 = [int(x) for x in str(month_to).split('-')[:2]]
+            end_date = _dt(y2, m2, 1)
+            end_date = _dt(y2 + (1 if m2 == 12 else 0), 1 if m2 == 12 else m2 + 1, 1)
+        if start_date and not end_date:
+            y, m = start_date.year, start_date.month
+            end_date = _dt(y + (1 if m == 12 else 0), 1 if m == 12 else m + 1, 1)
+    except Exception:
+        pass
+    if start_date:
+        df = df[df[date_col] >= start_date]
+    if end_date:
+        df = df[df[date_col] < end_date]
+
+    if not hasattr(df, 'empty') or df.empty:
+        return JsonResponse({"x_dates": [], "series": {}})
+
+    # Parse systolic from tekanan_darah like '120/80'
+    def _parse_systolic(x):
+        try:
+            s = str(x)
+            if '/' in s:
+                return float(s.split('/')[0])
+            return float(s)
+        except Exception:
+            return _pd.NA
+
+    # Month key
+    df['month'] = df[date_col].dt.strftime('%Y-%m')
+
+    # Numeric columns for target metrics
+    gdp_col = 'gula_darah_puasa' if 'gula_darah_puasa' in df.columns else None
+    gds_col = 'gula_darah_sewaktu' if 'gula_darah_sewaktu' in df.columns else None
+    chol_col = 'cholesterol' if 'cholesterol' in df.columns else None
+    asam_col = 'asam_urat' if 'asam_urat' in df.columns else None
+    bp_col = 'tekanan_darah' if 'tekanan_darah' in df.columns else None
+
+    df['gdp_num'] = _pd.to_numeric(df.get(gdp_col, _pd.Series([_pd.NA]*len(df))), errors='coerce') if gdp_col else _pd.Series([_pd.NA]*len(df))
+    df['gds_num'] = _pd.to_numeric(df.get(gds_col, _pd.Series([_pd.NA]*len(df))), errors='coerce') if gds_col else _pd.Series([_pd.NA]*len(df))
+    df['chol_num'] = _pd.to_numeric(df.get(chol_col, _pd.Series([_pd.NA]*len(df))), errors='coerce') if chol_col else _pd.Series([_pd.NA]*len(df))
+    df['asam_num'] = _pd.to_numeric(df.get(asam_col, _pd.Series([_pd.NA]*len(df))), errors='coerce') if asam_col else _pd.Series([_pd.NA]*len(df))
+    df['bp_sys'] = df.get(bp_col, _pd.Series([_pd.NA]*len(df))).apply(_parse_systolic) if bp_col else _pd.Series([_pd.NA]*len(df))
+
+    gb = df.groupby('month').agg({
+        'gdp_num':'mean',
+        'gds_num':'mean',
+        'bp_sys':'mean',
+        'chol_num':'mean',
+        'asam_num':'mean',
+    }).reset_index().sort_values('month')
+
+    x_dates = gb['month'].astype(str).tolist()
+
+    def _clean(vals):
+        return [ None if (v is None or (isinstance(v, float) and _pd.isna(v))) else float(v) for v in vals ]
+
+    series = {
+        'Gula Darah Puasa': _clean(gb['gdp_num'].tolist()),
+        'Gula Darah Sewaktu': _clean(gb['gds_num'].tolist()),
+        'Tekanan Darah': _clean(gb['bp_sys'].tolist()),
+        'Cholesterol': _clean(gb['chol_num'].tolist()),
+        'Asam Urat': _clean(gb['asam_num'].tolist()),
+    }
+
+    return JsonResponse({ 'x_dates': x_dates, 'series': series })

@@ -5,11 +5,13 @@
   const MAX_SAFE_POINTS = 5000;
   // Hard cap window to avoid rendering extremely large histories that may freeze the UI
 const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are large
-  // Determine API base prefix based on current route (supports manager and nurse)
+  // Determine API base prefix based on current route (supports manager, nurse, and karyawan)
   const API_BASE = (function(){
     try {
       const p = window.location && window.location.pathname ? window.location.pathname : '';
-      return (p.startsWith('/nurse') ? '/nurse' : '/manager');
+      if (p.startsWith('/nurse')) return '/nurse';
+      if (p.startsWith('/karyawan') || p.startsWith('/app_karyawan')) return '/karyawan';
+      return '/manager';
     } catch(e) { return '/manager'; }
   })();
 
@@ -92,7 +94,10 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
           areaStyle: chartType === 'area' ? { opacity: 0.25 } : undefined,
           lineStyle: Object.assign({ width: 3 }, s.lineStyle || {}),
           itemStyle: { color: s.color || '#0073fe' },
-          label: chartType === 'bar' && s.name === 'Unwell' ? { show: true, position: 'top', color: (s.color || '#dc2626'), fontSize: 12 } : undefined,
+          // Show value labels on top of every bar when chart type is 'bar'.
+          // This ensures all parameters (other than 'Semua') display current checkup values above the columns.
+          // Tooltip behavior remains unchanged.
+          label: chartType === 'bar' ? { show: true, position: 'top' } : undefined,
           labelLayout: chartType === 'bar' ? { hideOverlap: true } : undefined,
           // Pass-through advanced properties when provided
           endLabel: s.endLabel,
