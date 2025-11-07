@@ -471,3 +471,36 @@ def health_metrics_summary_json(request):
     }
 
     return JsonResponse({ 'x_dates': x_dates, 'series': series })
+
+
+@require_http_methods(["GET"])
+def rekomendasi_global_list(request):
+    """Public read-only list of global health recommendations.
+
+    Returns a JSON payload compatible with GrafikManager:
+    { "items": [ { "parameter": "Gula Darah Puasa", "rekomendasi_text": "...", "updated_at": "...", "created_at": "..." }, ... ] }
+    """
+    try:
+        from core.core_models import RekomendasiKesehatan
+    except Exception as e:
+        return JsonResponse({"items": [], "error": f"model import failed: {e}"})
+
+    try:
+        # Some deployments may not have a created_at field on RekomendasiKesehatan.
+        # Order by updated_at only to avoid ORM errors.
+        qs = RekomendasiKesehatan.objects.all().order_by('-updated_at')
+        items = []
+        for rec in qs:
+            try:
+                items.append({
+                    "parameter": rec.parameter or "",
+                    "rekomendasi_text": rec.rekomendasi_text or "",
+                    "updated_at": getattr(rec, 'updated_at', None).isoformat() if getattr(rec, 'updated_at', None) else "",
+                    "created_at": getattr(rec, 'created_at', None).isoformat() if getattr(rec, 'created_at', None) else "",
+                })
+            except Exception:
+                # Defensive: continue even if a single record has issues
+                continue
+        return JsonResponse({"items": items})
+    except Exception as e:
+        return JsonResponse({"items": [], "error": str(e)})

@@ -288,6 +288,15 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
           if (!uid) return null;
           return (this.karyawanList||[]).find(k=>String(k.uid)===uid) || null;
         }catch(e){ return null; }
+      },
+      // Fallback list: show all global recommendations when no exceed recommendations are available
+      globalRecommendationList(){
+        try{
+          const map = this.globalRecByParam || {};
+          const keys = Object.keys(map);
+          return keys.map(k => ({ parameter: k, text: String((map[k] && map[k].rekomendasi_text) || '') }))
+                     .filter(x => x.text && x.text.trim().length > 0);
+        }catch(e){ return []; }
       }
     },
     async mounted(){
@@ -1331,6 +1340,43 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
                       </div>
                       <div class="text-sm leading-snug text-amber-900">
                         <span v-html="linkifyText(r.text)"></span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <i data-lucide="external-link" class="w-3.5 h-3.5 text-amber-500"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Fallback: show global recommendations list when no exceed recommendations (public QR view) -->
+          <div v-else-if="tab==='health' && globalRecommendationList.length" class="mt-4 bg-white border rounded-xl shadow-sm">
+            <div class="px-4 pt-4">
+              <div class="flex items-center gap-2">
+                <i data-lucide="sparkles" class="w-4 h-4 text-amber-600"></i>
+                <h3 class="text-slate-900 font-semibold">Rekomendasi Kesehatan (Global)</h3>
+              </div>
+              <div class="mt-1 text-xs text-slate-500">Ditampilkan untuk edukasi umum. Sumber: rekomendasi global per parameter.</div>
+              <div class="mt-2 h-px bg-gradient-to-r from-amber-200 via-amber-300 to-transparent"></div>
+            </div>
+            <div class="px-4 pb-4 mt-3">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div
+                  v-for="g in globalRecommendationList"
+                  :key="g.parameter"
+                  class="group relative rounded-lg border border-amber-200 bg-amber-50/60 hover:bg-amber-50 shadow-sm hover:shadow-md transition-shadow"
+                >
+                  <div class="flex items-start gap-3 px-3 py-2">
+                    <div class="mt-0.5">
+                      <i data-lucide="lightbulb" class="w-4 h-4 text-amber-600"></i>
+                    </div>
+                    <div class="flex-1">
+                      <div class="flex items-center gap-2 mb-1">
+                        <span class="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-900 px-2 py-0.5 text-xs font-semibold border border-amber-200">{{ g.parameter }}</span>
+                      </div>
+                      <div class="text-sm leading-snug text-amber-900">
+                        <span v-html="linkifyText(g.text)"></span>
                       </div>
                     </div>
                   </div>
