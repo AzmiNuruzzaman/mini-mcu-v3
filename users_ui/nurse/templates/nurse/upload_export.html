@@ -34,11 +34,11 @@
         <section>
           <h3 class="text-lg font-semibold mb-4">Upload Medical Checkup Data</h3>
           <div class="bg-gray-50 p-6 rounded-lg">
-            <form method="POST" action="{% url 'nurse:upload_checkup' %}" enctype="multipart/form-data" class="space-y-4">
+            <form id="nurse-checkup-form" method="POST" action="{% url 'nurse:upload_checkup' %}" enctype="multipart/form-data" class="space-y-4">
               {% csrf_token %}
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-2">Select Excel File</label>
-                <input type="file" name="file" accept=".xls,.xlsx" class="block w-full text-sm text-gray-500
+                <input id="nurse-checkup-file" type="file" name="file" accept=".xls,.xlsx" class="block w-full text-sm text-gray-500
                   file:mr-4 file:py-2 file:px-4
                   file:rounded-full file:border-0
                   file:text-sm file:font-semibold
@@ -46,7 +46,7 @@
                   hover:file:bg-blue-100">
               </div>
               <div class="flex items-center space-x-4">
-                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                <button id="nurse-upload-btn" type="button" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
                   Upload Checkup Data
                 </button>
                 <a href="{% url 'nurse:download_checkup_template' %}" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
@@ -90,4 +90,16 @@
     {% endwith %}
   </div>
 </div>
+<script>
+  (function(){
+    // Nurse Upload Checkup: button opens file dialog, auto submit on file pick
+    var nurseBtn = document.getElementById('nurse-upload-btn');
+    var nurseFile = document.getElementById('nurse-checkup-file');
+    var nurseForm = document.getElementById('nurse-checkup-form');
+    if (nurseBtn && nurseFile && nurseForm) {
+      nurseBtn.addEventListener('click', function(){ nurseFile.click(); });
+      nurseFile.addEventListener('change', function(){ if (nurseFile.files && nurseFile.files.length) { nurseForm.submit(); } });
+    }
+  })();
+</script>
 {% endblock %}
