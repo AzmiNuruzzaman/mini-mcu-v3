@@ -981,6 +981,50 @@ def upload_medical_checkup_xls(request):
         "menu_items": menu_items
     })
 
+def upload_rekomendasi_xls(request):
+    if not request.session.get("authenticated") or request.session.get("user_role") != "Manager":
+        return redirect("accounts:login")
+
+    employees_df = get_employees()
+    default_uid = str(employees_df.iloc[0]['uid']) if not employees_df.empty else None
+
+    menu_items = [
+        {"key": "dashboard", "name": "Dashboard", "url": reverse("manager:dashboard"), "icon": "chart-line"},
+        {"key": "user", "name": "User Management", "url": reverse("manager:user_management"), "icon": "users"},
+        {"key": "qr", "name": "QR Codes", "url": reverse("manager:qr_codes"), "icon": "qrcode"},
+        {"key": "data", "name": "Upload & Export", "url": reverse("manager:upload_export"), "icon": "upload"},
+        {"key": "hapus_data_karyawan", "name": "Hapus Data Karyawan", "url": reverse("manager:hapus_data_karyawan"), "icon": "database"},
+        {"key": "edit_karyawan", "name": "Edit Master Data", "url": reverse("manager:edit_karyawan", kwargs={'uid': default_uid}) if default_uid else '#', "icon": "edit"},
+    ]
+
+    if request.method == "POST" and request.FILES.get("file"):
+        try:
+            uploaded_file = request.FILES["file"]
+            os.makedirs(settings.UPLOAD_CHECKUPS_DIR, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+            original_name = os.path.basename(uploaded_file.name)
+            save_path = os.path.join(settings.UPLOAD_CHECKUPS_DIR, f"{ts}-{original_name}")
+            with open(save_path, "wb+") as dest:
+                for chunk in uploaded_file.chunks():
+                    dest.write(chunk)
+
+            result = excel_parser.parse_rekomendasi_excel(save_path)
+            inserted = int(result.get('inserted', 0)) if isinstance(result, dict) else 0
+            updated = int(result.get('updated', 0)) if isinstance(result, dict) else 0
+            skipped = len(result.get('skipped', [])) if isinstance(result, dict) else 0
+            request.session['success_message'] = f"Excel berhasil diupload! {inserted} rekomendasi baru, {updated} diupdate, {skipped} dilewati."
+        except Exception as e:
+            request.session['error_message'] = f"Upload failed: {e}"
+        next_url = request.POST.get("next", "").strip()
+        if next_url:
+            return redirect(next_url)
+        return redirect(reverse("manager:upload_export") + "?submenu=upload_rekomendasi")
+
+    return render(request, "manager/upload_export.html", {
+        "active_menu": "data",
+        "menu_items": menu_items
+    })
+
 # -------------------------
 # Upload Log Management
 # -------------------------
@@ -4355,7 +4399,26 @@ def rekomendasi_global_list_json(request):
     """List global rekomendasi kesehatan per-parameter (not tied to karyawan).
 
     Response shape:
-    { "items": [ {"id":1, "parameter":"BMI", "rekomendasi_text":"...", "created_by":"username", "updated_at":"..."}, ... ] }
+    {
+      "items": [
+        {
+          "id": 1,
+          "parameter": "BMI",
+          "rekomendasi_text": "...",
+          "weekly": {
+            "senin": "...",
+            "selasa": "...",
+            "rabu": "...",
+            "kamis": "...",
+            "jumat": "...",
+            "sabtu": "...",
+            "minggu": "..."
+          },
+          "created_by": "username",
+          "updated_at": "..."
+        }
+      ]
+    }
     """
     role = request.session.get("user_role")
     if not request.session.get("authenticated") or role not in ["Manager", "Tenaga Kesehatan"]:
@@ -4364,10 +4427,43 @@ def rekomendasi_global_list_json(request):
         qs = RekomendasiKesehatan.objects.all().order_by("parameter", "-updated_at")
         items = []
         for rec in qs:
+            # Auto-generate rekomendasi_text from weekly_plan when empty (backward compatibility)
+            try:
+                display_text = (rec.rekomendasi_text or '').strip()
+                wp = getattr(rec, 'weekly_plan', None)
+                if not display_text and isinstance(wp, dict) and wp:
+                    day_order = ['senin','selasa','rabu','kamis','jumat','sabtu','minggu']
+                    day_labels = { 'senin':'Senin', 'selasa':'Selasa', 'rabu':'Rabu', 'kamis':'Kamis', 'jumat':'Jumat', 'sabtu':'Sabtu', 'minggu':'Minggu' }
+                    field_order = ['sarapan','snack','makan_siang','makan_malam','olahraga','link']
+                    field_labels = { 'sarapan':'Sarapan', 'snack':'Snack', 'makan_siang':'Makan Siang', 'makan_malam':'Makan Malam', 'olahraga':'Olahraga', 'link':'Link' }
+                    lines = []
+                    for d in day_order:
+                        obj = wp.get(d) or {}
+                        parts = []
+                        for f in field_order:
+                            val = (obj.get(f) or '').strip()
+                            if val:
+                                parts.append(f"{field_labels[f]}: {val}")
+                        if parts:
+                            lines.append(f"{day_labels[d]}: {'; '.join(parts)}")
+                    display_text = "\n".join(lines)
+            except Exception:
+                display_text = rec.rekomendasi_text
             items.append({
                 "id": rec.id,
                 "parameter": rec.parameter,
-                "rekomendasi_text": rec.rekomendasi_text,
+                "rekomendasi_text": display_text,
+                # Option A: include structured weekly_plan when available
+                "weekly_plan": getattr(rec, 'weekly_plan', None),
+                "weekly": {
+                    "senin": getattr(rec, 'senin_text', None) or "",
+                    "selasa": getattr(rec, 'selasa_text', None) or "",
+                    "rabu": getattr(rec, 'rabu_text', None) or "",
+                    "kamis": getattr(rec, 'kamis_text', None) or "",
+                    "jumat": getattr(rec, 'jumat_text', None) or "",
+                    "sabtu": getattr(rec, 'sabtu_text', None) or "",
+                    "minggu": getattr(rec, 'minggu_text', None) or "",
+                },
                 "created_by": getattr(getattr(rec, "created_by", None), "username", None),
                 "updated_at": rec.updated_at.isoformat() if rec.updated_at else None,
             })
@@ -4381,7 +4477,7 @@ def rekomendasi_global_list_json(request):
 def rekomendasi_global_create_json(request):
     """Create or upsert a global rekomendasi for a parameter.
 
-    Expected JSON body: { "parameter": "...", "rekomendasi_text": "..." }
+    Expected JSON body: { "parameter": "...", "rekomendasi_text": "...", "weekly": { senin, selasa, rabu, kamis, jumat, sabtu, minggu } }
     Behaviors:
     - If a record for the parameter exists, update it; else create.
     - This keeps the UI's single 'Simpan' button semantics.
@@ -4394,9 +4490,13 @@ def rekomendasi_global_create_json(request):
         payload = json.loads(request.body.decode("utf-8"))
     except Exception:
         payload = {}
-    parameter = (payload.get("parameter") or "").strip()
+    # Default to GLOBAL when not provided, to support single global plan
+    parameter = (payload.get("parameter") or "GLOBAL").strip()
     rekomendasi_text = (payload.get("rekomendasi_text") or "").strip()
-    if not parameter or not rekomendasi_text:
+    weekly = payload.get("weekly") or {}
+    weekly_plan = payload.get("weekly_plan") or None
+    # Allow saving even if rekomendasi_text is empty, as weekly fields may be provided
+    if not parameter:
         return JsonResponse({"error":"invalid_input"}, status=400)
     # Determine created_by user id based on session username
     username = request.session.get("username") or getattr(getattr(request, "user", None), "username", None)
@@ -4409,12 +4509,29 @@ def rekomendasi_global_create_json(request):
         created_by_id = None
     try:
         # Upsert: per-parameter only
+        defaults = {
+            "rekomendasi_text": rekomendasi_text,
+            "created_by_id": created_by_id,
+        }
+        # Map weekly payload to model fields if present
+        try:
+            defaults.update({
+                "senin_text": (weekly.get("senin") or "").strip() or None,
+                "selasa_text": (weekly.get("selasa") or "").strip() or None,
+                "rabu_text": (weekly.get("rabu") or "").strip() or None,
+                "kamis_text": (weekly.get("kamis") or "").strip() or None,
+                "jumat_text": (weekly.get("jumat") or "").strip() or None,
+                "sabtu_text": (weekly.get("sabtu") or "").strip() or None,
+                "minggu_text": (weekly.get("minggu") or "").strip() or None,
+            })
+        except Exception:
+            pass
+        # Option A: store structured weekly_plan when provided
+        if isinstance(weekly_plan, dict) and weekly_plan:
+            defaults["weekly_plan"] = weekly_plan
         obj, created = RekomendasiKesehatan.objects.update_or_create(
             parameter=parameter,
-            defaults={
-                "rekomendasi_text": rekomendasi_text,
-                "created_by_id": created_by_id,
-            }
+            defaults=defaults
         )
         return JsonResponse({"id": obj.id, "status": "created" if created else "updated"})
     except Exception as e:
@@ -4435,13 +4552,30 @@ def rekomendasi_global_update_json(request, rec_id):
         payload = {}
     parameter = (payload.get("parameter") or "").strip() if payload.get("parameter") is not None else None
     rekomendasi_text = (payload.get("rekomendasi_text") or "").strip()
-    if not rekomendasi_text:
-        return JsonResponse({"error":"invalid_input"}, status=400)
+    weekly = payload.get("weekly") or {}
+    weekly_plan = payload.get("weekly_plan") or None
+    # Allow updating even if rekomendasi_text is empty, as weekly fields may be provided
     try:
         rec = RekomendasiKesehatan.objects.get(id=int(rec_id))
         rec.parameter = parameter or rec.parameter
-        rec.rekomendasi_text = rekomendasi_text
-        rec.save(update_fields=["parameter","rekomendasi_text","updated_at"])
+        # Only update rekomendasi_text if provided (keeps backward compatibility)
+        if payload.get("rekomendasi_text") is not None:
+            rec.rekomendasi_text = rekomendasi_text
+        # Update weekly fields if provided
+        try:
+            setattr(rec, 'senin_text', (weekly.get("senin") or "").strip() or None)
+            setattr(rec, 'selasa_text', (weekly.get("selasa") or "").strip() or None)
+            setattr(rec, 'rabu_text', (weekly.get("rabu") or "").strip() or None)
+            setattr(rec, 'kamis_text', (weekly.get("kamis") or "").strip() or None)
+            setattr(rec, 'jumat_text', (weekly.get("jumat") or "").strip() or None)
+            setattr(rec, 'sabtu_text', (weekly.get("sabtu") or "").strip() or None)
+            setattr(rec, 'minggu_text', (weekly.get("minggu") or "").strip() or None)
+        except Exception:
+            pass
+        # Option A: update structured weekly_plan when provided
+        if isinstance(weekly_plan, dict):
+            rec.weekly_plan = weekly_plan
+        rec.save()
         return JsonResponse({"status":"ok"})
     except RekomendasiKesehatan.DoesNotExist:
         return JsonResponse({"error":"not_found"}, status=404)
@@ -4462,6 +4596,21 @@ def rekomendasi_global_delete_json(request, rec_id):
         return JsonResponse({"status":"ok"})
     except RekomendasiKesehatan.DoesNotExist:
         return JsonResponse({"error":"not_found"}, status=404)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"]) 
+def rekomendasi_global_delete_all_json(request):
+    """Delete ALL global rekomendasi entries (per-parameter records)."""
+    role = request.session.get("user_role")
+    if not request.session.get("authenticated") or role not in ["Manager"]:
+        return JsonResponse({"error": "unauthorized"}, status=401)
+    try:
+        count = RekomendasiKesehatan.objects.all().count()
+        RekomendasiKesehatan.objects.all().delete()
+        return JsonResponse({"status": "ok", "deleted": count})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 # Tab 5b: Delete Single Employee (trailing duplicate removed)

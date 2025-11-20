@@ -478,7 +478,18 @@ def rekomendasi_global_list(request):
     """Public read-only list of global health recommendations.
 
     Returns a JSON payload compatible with GrafikManager:
-    { "items": [ { "parameter": "Gula Darah Puasa", "rekomendasi_text": "...", "updated_at": "...", "created_at": "..." }, ... ] }
+    {
+      "items": [
+        {
+          "parameter": "Gula Darah Puasa",
+          "rekomendasi_text": "...",
+          "weekly": { "senin":"...","selasa":"...","rabu":"...","kamis":"...","jumat":"...","sabtu":"...","minggu":"..." },
+          "updated_at": "...",
+          "created_at": "..."
+        },
+        ...
+      ]
+    }
     """
     try:
         from core.core_models import RekomendasiKesehatan
@@ -495,6 +506,15 @@ def rekomendasi_global_list(request):
                 items.append({
                     "parameter": rec.parameter or "",
                     "rekomendasi_text": rec.rekomendasi_text or "",
+                    "weekly": {
+                        "senin": getattr(rec, 'senin_text', None) or "",
+                        "selasa": getattr(rec, 'selasa_text', None) or "",
+                        "rabu": getattr(rec, 'rabu_text', None) or "",
+                        "kamis": getattr(rec, 'kamis_text', None) or "",
+                        "jumat": getattr(rec, 'jumat_text', None) or "",
+                        "sabtu": getattr(rec, 'sabtu_text', None) or "",
+                        "minggu": getattr(rec, 'minggu_text', None) or "",
+                    },
                     "updated_at": getattr(rec, 'updated_at', None).isoformat() if getattr(rec, 'updated_at', None) else "",
                     "created_at": getattr(rec, 'created_at', None).isoformat() if getattr(rec, 'created_at', None) else "",
                 })

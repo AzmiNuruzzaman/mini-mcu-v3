@@ -20,6 +20,12 @@
       focus:outline-none focus:ring-2 focus:ring-green-500
     ">Upload Checkup</a>
 
+    <a href="?submenu=upload_rekomendasi" class="
+      px-3 py-1.5 text-sm font-medium rounded-t-md border border-b-0
+      {% if is_active == 'upload_rekomendasi' %} bg-green-600 text-white border-green-600 {% else %} bg-white text-gray-700 hover:bg-gray-50 border-gray-300 {% endif %}
+      focus:outline-none focus:ring-2 focus:ring-green-500
+    ">Upload Rekomendasi</a>
+
     <a href="?submenu=export_data" class="
       px-3 py-1.5 text-sm font-medium rounded-t-md border border-b-0
       {% if is_active == 'export_data' %} bg-green-600 text-white border-green-600 {% else %} bg-white text-gray-700 hover:bg-gray-50 border-gray-300 {% endif %}
@@ -107,6 +113,26 @@
             </button>
           </form>
         </section>
+      {% elif is_active == 'upload_rekomendasi' %}
+        <section>
+          <h3 class="text-lg font-semibold mb-4">Upload Rekomendasi Kesehatan</h3>
+          <p class="text-xs text-gray-600 mb-2">Format: tiap sheet mewakili parameter, nama sheet = nama parameter.</p>
+          <form id="manager-rekomendasi-form" method="POST" action="{% url 'manager:upload_rekomendasi_xls' %}" enctype="multipart/form-data" class="space-y-4">
+            {% csrf_token %}
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Select Excel File</label>
+              <input id="manager-rekomendasi-file" type="file" name="file" accept=".xls,.xlsx" class="block w-full text-sm text-gray-500
+                file:mr-4 file:py-2 file:px-4
+                file:rounded-full file:border-0
+                file:text-sm file:font-semibold
+                file:bg-blue-50 file:text-blue-700
+                hover:file:bg-blue-100">
+            </div>
+            <button id="manager-rekomendasi-upload-btn" type="button" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+              Upload Rekomendasi
+            </button>
+          </form>
+        </section>
       {% elif is_active == 'export_data' %}
         <!-- Export Data -->
         <section>
@@ -154,6 +180,15 @@
     if (checkupBtn && checkupFile && checkupForm) {
       checkupBtn.addEventListener('click', function(){ checkupFile.click(); });
       checkupFile.addEventListener('change', function(){ if (checkupFile.files && checkupFile.files.length) { checkupForm.submit(); } });
+    }
+
+    // Manager Upload Rekomendasi: button opens file dialog, auto submit on file pick
+    var rekBtn = document.getElementById('manager-rekomendasi-upload-btn');
+    var rekFile = document.getElementById('manager-rekomendasi-file');
+    var rekForm = document.getElementById('manager-rekomendasi-form');
+    if (rekBtn && rekFile && rekForm) {
+      rekBtn.addEventListener('click', function(){ rekFile.click(); });
+      rekFile.addEventListener('change', function(){ if (rekFile.files && rekFile.files.length) { rekForm.submit(); } });
     }
   })();
 </script>

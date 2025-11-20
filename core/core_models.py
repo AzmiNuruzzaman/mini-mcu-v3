@@ -105,6 +105,22 @@ class RekomendasiKesehatan(models.Model):
     # Parameter name should align with GrafikManager metrics keys (e.g., "BMI", "Tekanan Darah", "Gula Darah Puasa")
     parameter = models.CharField(max_length=100, unique=True)
     rekomendasi_text = models.TextField()
+    # Structured weekly plan (Option A): JSON per day with categories
+    # Shape example:
+    # {
+    #   "senin": {"sarapan":"...","snack":"...","makan_siang":"...","makan_malam":"...","olahraga":"...","link":"https://..."},
+    #   "selasa": { ... },
+    #   ...
+    # }
+    weekly_plan = models.JSONField(blank=True, null=True)
+    # Mingguan (Senin-Minggu) — setiap hari hanya teks biasa, bisa berisi menu diet atau link YouTube jika diperlukan
+    senin_text = models.TextField(blank=True, null=True)
+    selasa_text = models.TextField(blank=True, null=True)
+    rabu_text = models.TextField(blank=True, null=True)
+    kamis_text = models.TextField(blank=True, null=True)
+    jumat_text = models.TextField(blank=True, null=True)
+    sabtu_text = models.TextField(blank=True, null=True)
+    minggu_text = models.TextField(blank=True, null=True)
     created_by = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,

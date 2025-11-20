@@ -285,6 +285,140 @@ def _map_extended_columns(df: pd.DataFrame):
         mapped[db_col] = found
     return mapped
 
+def parse_rekomendasi_excel(file_path):
+    all_sheets = pd.read_excel(file_path, sheet_name=None)
+    from core.core_models import RekomendasiKesehatan
+    inserted = 0
+    updated = 0
+    skipped = []
+    days = ['senin','selasa','rabu','kamis','jumat','sabtu','minggu']
+    def norm(s):
+        try:
+            return _normalize_header(str(s))
+        except Exception:
+            return ''
+    for sheet_name, df in all_sheets.items():
+        parameter = str(sheet_name).strip()
+        if not parameter:
+            skipped.append((sheet_name, 'empty-parameter'))
+            continue
+        df.columns = [c.strip() for c in df.columns]
+        cols_norm = { norm(c): c for c in df.columns }
+        has_hari = any(norm(c) == 'hari' for c in df.columns)
+        weekly_plan = None
+        senin_text = None
+        selasa_text = None
+        rabu_text = None
+        kamis_text = None
+        jumat_text = None
+        sabtu_text = None
+        minggu_text = None
+        rekomendasi_text = None
+        if has_hari:
+            hari_col = None
+            for c in df.columns:
+                if norm(c) == 'hari':
+                    hari_col = c
+                    break
+            def find_col(*cands):
+                for k in cands:
+                    v = cols_norm.get(k)
+                    if v:
+                        return v
+                return None
+            fields_map = {
+                'sarapan': find_col('sarapan'),
+                'snack': find_col('snack'),
+                'makan_siang': find_col('makan siang', 'makan_siang'),
+                'makan_malam': find_col('makan malam', 'makan_malam'),
+                'olahraga': find_col('olahraga', 'olahraga yang disarankan', 'olahraga_yang_disarankan', 'exercise', 'latihan'),
+                'link': find_col('link', 'tautan', 'url', 'youtube', 'video'),
+            }
+            weekly_plan = {}
+            for _, row in df.iterrows():
+                day_raw = str(row.get(hari_col, '')).strip().lower()
+                day_key = None
+                for d in days:
+                    if d in day_raw:
+                        day_key = d
+                        break
+                if not day_key:
+                    continue
+                weekly_plan[day_key] = {
+                    'sarapan': str(row.get(fields_map['sarapan'], '') or ''),
+                    'snack': str(row.get(fields_map['snack'], '') or ''),
+                    'makan_siang': str(row.get(fields_map['makan_siang'], '') or ''),
+                    'makan_malam': str(row.get(fields_map['makan_malam'], '') or ''),
+                    'olahraga': str(row.get(fields_map['olahraga'], '') or ''),
+                    'link': str(row.get(fields_map['link'], '') or ''),
+                }
+        else:
+            has_any_day_cols = any(norm(c) in days for c in df.columns)
+            if has_any_day_cols:
+                def cell_first(col):
+                    try:
+                        if col in df.columns and len(df[col]):
+                            v = df[col].iloc[0]
+                            return None if pd.isna(v) else str(v)
+                    except Exception:
+                        return None
+                    return None
+                senin_text = cell_first(cols_norm.get('senin') or 'senin')
+                selasa_text = cell_first(cols_norm.get('selasa') or 'selasa')
+                rabu_text = cell_first(cols_norm.get('rabu') or 'rabu')
+                kamis_text = cell_first(cols_norm.get('kamis') or 'kamis')
+                jumat_text = cell_first(cols_norm.get('jumat') or 'jumat')
+                sabtu_text = cell_first(cols_norm.get('sabtu') or 'sabtu')
+                minggu_text = cell_first(cols_norm.get('minggu') or 'minggu')
+            else:
+                text_col = None
+                for c in df.columns:
+                    n = norm(c)
+                    if n in ('rekomendasi', 'rekomendasi text', 'rekomendasi_text', 'catatan', 'notes', 'remark'):
+                        text_col = c
+                        break
+                if text_col:
+                    try:
+                        v = df[text_col].dropna().astype(str).tolist()
+                        rekomendasi_text = '\n'.join(v)
+                    except Exception:
+                        rekomendasi_text = None
+        try:
+            obj, created = RekomendasiKesehatan.objects.get_or_create(parameter=parameter)
+            changed = False
+            if weekly_plan is not None:
+                obj.weekly_plan = weekly_plan
+                obj.senin_text = None
+                obj.selasa_text = None
+                obj.rabu_text = None
+                obj.kamis_text = None
+                obj.jumat_text = None
+                obj.sabtu_text = None
+                obj.minggu_text = None
+                changed = True
+            else:
+                obj.weekly_plan = None
+                obj.senin_text = senin_text
+                obj.selasa_text = selasa_text
+                obj.rabu_text = rabu_text
+                obj.kamis_text = kamis_text
+                obj.jumat_text = jumat_text
+                obj.sabtu_text = sabtu_text
+                obj.minggu_text = minggu_text
+                changed = True
+            if rekomendasi_text is not None:
+                obj.rekomendasi_text = rekomendasi_text
+                changed = True
+            obj.save()
+            if created:
+                inserted += 1
+            else:
+                if changed:
+                    updated += 1
+        except Exception as e:
+            skipped.append((sheet_name, str(e)))
+    return { 'inserted': inserted, 'updated': updated, 'skipped': skipped }
+
 
 def parse_master_preview(file_obj):
     """

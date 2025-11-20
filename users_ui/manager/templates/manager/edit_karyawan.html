@@ -507,73 +507,9 @@
         </div>
       </div>
 
-      <!-- Input areas for each parameter (no dropdown; direct inputs) -->
-      <h3 class="text-slate-900 font-semibold mb-2">Input Rekomendasi Per Parameter</h3>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="rekomendasi-inputs">
-        {% comment %} Django templates do not have a built-in 'split' filter. Render inputs explicitly. {% endcomment %}
-        <div class="p-4 border rounded-lg bg-white shadow-sm">
-          <label class="block font-semibold mb-1">Gula Darah Puasa</label>
-          <textarea data-param="Gula Darah Puasa" class="w-full border px-2 py-1 rounded min-h-[100px]" placeholder="Masukkan rekomendasi untuk parameter Gula Darah Puasa..."></textarea>
-          <div class="mt-1 flex justify-between text-xs text-slate-500"><span data-char-count="Gula Darah Puasa">0 karakter</span><span>Tekan Simpan untuk menyimpan</span></div>
-          <div class="mt-2 flex justify-end">
-            <button type="button" data-save="Gula Darah Puasa" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Simpan</button>
-          </div>
-        </div>
-        <div class="p-4 border rounded-lg bg-white shadow-sm">
-          <label class="block font-semibold mb-1">Gula Darah Sewaktu</label>
-          <textarea data-param="Gula Darah Sewaktu" class="w-full border px-2 py-1 rounded min-h-[100px]" placeholder="Masukkan rekomendasi untuk parameter Gula Darah Sewaktu..."></textarea>
-          <div class="mt-1 flex justify-between text-xs text-slate-500"><span data-char-count="Gula Darah Sewaktu">0 karakter</span><span>Tekan Simpan untuk menyimpan</span></div>
-          <div class="mt-2 flex justify-end">
-            <button type="button" data-save="Gula Darah Sewaktu" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Simpan</button>
-          </div>
-        </div>
-        <div class="p-4 border rounded-lg bg-white shadow-sm">
-          <label class="block font-semibold mb-1">Tekanan Darah</label>
-          <textarea data-param="Tekanan Darah" class="w-full border px-2 py-1 rounded min-h-[100px]" placeholder="Masukkan rekomendasi untuk parameter Tekanan Darah..."></textarea>
-          <div class="mt-1 flex justify-between text-xs text-slate-500"><span data-char-count="Tekanan Darah">0 karakter</span><span>Tekan Simpan untuk menyimpan</span></div>
-          <div class="mt-2 flex justify-end">
-            <button type="button" data-save="Tekanan Darah" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Simpan</button>
-          </div>
-        </div>
-        <div class="p-4 border rounded-lg bg-white shadow-sm">
-          <label class="block font-semibold mb-1">Cholesterol</label>
-          <textarea data-param="Cholesterol" class="w-full border px-2 py-1 rounded min-h-[100px]" placeholder="Masukkan rekomendasi untuk parameter Cholesterol..."></textarea>
-          <div class="mt-1 flex justify-between text-xs text-slate-500"><span data-char-count="Cholesterol">0 karakter</span><span>Tekan Simpan untuk menyimpan</span></div>
-          <div class="mt-2 flex justify-end">
-            <button type="button" data-save="Cholesterol" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Simpan</button>
-          </div>
-        </div>
-        <div class="p-4 border rounded-lg bg-white shadow-sm">
-          <label class="block font-semibold mb-1">Asam Urat</label>
-          <textarea data-param="Asam Urat" class="w-full border px-2 py-1 rounded min-h-[100px]" placeholder="Masukkan rekomendasi untuk parameter Asam Urat..."></textarea>
-          <div class="mt-1 flex justify-between text-xs text-slate-500"><span data-char-count="Asam Urat">0 karakter</span><span>Tekan Simpan untuk menyimpan</span></div>
-          <div class="mt-2 flex justify-end">
-            <button type="button" data-save="Asam Urat" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Simpan</button>
-          </div>
-        </div>
-        <div class="p-4 border rounded-lg bg-white shadow-sm">
-          <label class="block font-semibold mb-1">Lingkar Perut</label>
-          <textarea data-param="Lingkar Perut" class="w-full border px-2 py-1 rounded min-h-[100px]" placeholder="Masukkan rekomendasi untuk parameter Lingkar Perut..."></textarea>
-          <div class="mt-1 flex justify-between text-xs text-slate-500"><span data-char-count="Lingkar Perut">0 karakter</span><span>Tekan Simpan untuk menyimpan</span></div>
-          <div class="mt-2 flex justify-end">
-            <button type="button" data-save="Lingkar Perut" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Simpan</button>
-          </div>
-        </div>
-        <div class="p-4 border rounded-lg bg-white shadow-sm">
-          <label class="block font-semibold mb-1">BMI</label>
-          <textarea data-param="BMI" class="w-full border px-2 py-1 rounded min-h-[100px]" placeholder="Masukkan rekomendasi untuk parameter BMI..."></textarea>
-          <div class="mt-1 flex justify-between text-xs text-slate-500"><span data-char-count="BMI">0 karakter</span><span>Tekan Simpan untuk menyimpan</span></div>
-          <div class="mt-2 flex justify-end">
-            <button type="button" data-save="BMI" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Simpan</button>
-          </div>
-        </div>
-      </div>
+      <!-- Legacy per-parameter input grid removed; use the Weekly Editor below -->
 
-      <!-- Global action: Simpan semua rekomendasi (placed above the list/df) -->
-      <div class="mt-3 border-t pt-3 rounded-lg bg-slate-50/60 px-3 py-2 flex items-center justify-between">
-        <div class="text-xs text-slate-600">Tips: Isi beberapa rekomendasi sekaligus, lalu gunakan tombol hijau untuk menyimpan massal.</div>
-        <button type="button" id="save-all-rekomendasi" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Simpan semua</button>
-      </div>
+      <!-- Legacy bulk save removed -->
 
       <!-- Section divider to clearly separate inputs and list/df -->
       <div class="mt-4">
@@ -584,27 +520,148 @@
         </div>
       </div>
 
-      <!-- Existing rekomendasi list -->
-      <div class="mt-6">
+      <!-- Weekly Recommendations Editor -->
+      <div class="mt-6 p-4 border rounded-lg bg-white shadow-sm" id="rekomendasi-weekly-editor">
         <div class="flex items-center justify-between mb-2">
-          <h3 class="text-lg font-semibold">Daftar Rekomendasi Tersimpan</h3>
-          <button type="button" id="delete-all-rekomendasi" class="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700">Hapus semua</button>
+          <h3 class="text-slate-900 font-semibold">Editor Rekomendasi Mingguan</h3>
+          <form id="rek-upload-form" method="POST" action="{% url 'manager:upload_rekomendasi_xls' %}" enctype="multipart/form-data" class="inline-flex items-center gap-2">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'manager:edit_karyawan' employee.uid %}?submenu=rekomendasi">
+            <input id="rek-upload-file" type="file" name="file" accept=".xls,.xlsx" class="hidden">
+            <button id="rek-upload-btn" type="button" class="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700">Upload Rekomendasi (XLS)</button>
+          </form>
         </div>
+        <div class="mb-3">
+          <label class="block text-sm font-medium text-gray-700">Parameter</label>
+          <select id="rek-parameter-select" class="w-64 border px-2 py-1 rounded">
+            <option value="Gula Darah Puasa">Gula Darah Puasa</option>
+            <option value="Gula Darah Sewaktu">Gula Darah Sewaktu</option>
+            <option value="Tekanan Darah">Tekanan Darah</option>
+            <option value="Cholesterol">Cholesterol</option>
+            <option value="Asam Urat">Asam Urat</option>
+          </select>
+          <div class="mt-2 inline-flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-900 text-xs md:text-sm px-3 py-1 rounded-md">Parameter aktif: <span id="rek-editor-selected-name" class="font-semibold"></span></div>
+        </div>
+        <p class="text-xs text-slate-600 mb-3">Format: Hari (Senin-Minggu) × Sarapan, Snack, Makan Siang, Makan Malam, Olahraga yang Disarankan, link luar (youtube etc).</p>
         <div class="overflow-x-auto">
-          <table class="min-w-full table-auto border-collapse border border-gray-300" id="rekomendasi-table">
+          <table class="min-w-full table-auto border-collapse border border-gray-300" id="weekly-editor-table">
             <thead>
               <tr class="bg-gray-100">
-                <th class="border px-2 py-1 text-left">Parameter</th>
-                <th class="border px-2 py-1 text-left">Rekomendasi</th>
-                <th class="border px-2 py-1 text-left">Dibuat Oleh</th>
-                <th class="border px-2 py-1 text-left">Diupdate</th>
-                <th class="border px-2 py-1">Aksi</th>
+                <th class="border px-2 py-1">hari</th>
+                <th class="border px-2 py-1">sarapan</th>
+                <th class="border px-2 py-1">snack</th>
+                <th class="border px-2 py-1">makan siang</th>
+                <th class="border px-2 py-1">makan malam</th>
+                <th class="border px-2 py-1">olahraga yang disarankan</th>
+                <th class="border px-2 py-1">link luar</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="border px-2 py-1 font-semibold">senin</td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="senin" data-field="sarapan"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="senin" data-field="snack"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="senin" data-field="makan_siang"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="senin" data-field="makan_malam"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="senin" data-field="olahraga"></td>
+                <td class="border px-2 py-1"><input type="url" class="w-full border px-2 py-1 rounded" data-day="senin" data-field="link" placeholder="https://... (opsional)"></td>
+              </tr>
+              <tr>
+                <td class="border px-2 py-1 font-semibold">selasa</td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="selasa" data-field="sarapan"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="selasa" data-field="snack"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="selasa" data-field="makan_siang"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="selasa" data-field="makan_malam"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="selasa" data-field="olahraga"></td>
+                <td class="border px-2 py-1"><input type="url" class="w-full border px-2 py-1 rounded" data-day="selasa" data-field="link" placeholder="https://... (opsional)"></td>
+              </tr>
+              <tr>
+                <td class="border px-2 py-1 font-semibold">rabu</td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="rabu" data-field="sarapan"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="rabu" data-field="snack"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="rabu" data-field="makan_siang"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="rabu" data-field="makan_malam"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="rabu" data-field="olahraga"></td>
+                <td class="border px-2 py-1"><input type="url" class="w-full border px-2 py-1 rounded" data-day="rabu" data-field="link" placeholder="https://... (opsional)"></td>
+              </tr>
+              <tr>
+                <td class="border px-2 py-1 font-semibold">kamis</td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="kamis" data-field="sarapan"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="kamis" data-field="snack"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="kamis" data-field="makan_siang"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="kamis" data-field="makan_malam"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="kamis" data-field="olahraga"></td>
+                <td class="border px-2 py-1"><input type="url" class="w-full border px-2 py-1 rounded" data-day="kamis" data-field="link" placeholder="https://... (opsional)"></td>
+              </tr>
+              <tr>
+                <td class="border px-2 py-1 font-semibold">jumat</td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="jumat" data-field="sarapan"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="jumat" data-field="snack"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="jumat" data-field="makan_siang"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="jumat" data-field="makan_malam"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="jumat" data-field="olahraga"></td>
+                <td class="border px-2 py-1"><input type="url" class="w-full border px-2 py-1 rounded" data-day="jumat" data-field="link" placeholder="https://... (opsional)"></td>
+              </tr>
+              <tr>
+                <td class="border px-2 py-1 font-semibold">sabtu</td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="sabtu" data-field="sarapan"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="sabtu" data-field="snack"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="sabtu" data-field="makan_siang"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="sabtu" data-field="makan_malam"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="sabtu" data-field="olahraga"></td>
+                <td class="border px-2 py-1"><input type="url" class="w-full border px-2 py-1 rounded" data-day="sabtu" data-field="link" placeholder="https://... (opsional)"></td>
+              </tr>
+              <tr>
+                <td class="border px-2 py-1 font-semibold">minggu</td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="minggu" data-field="sarapan"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="minggu" data-field="snack"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="minggu" data-field="makan_siang"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="minggu" data-field="makan_malam"></td>
+                <td class="border px-2 py-1"><input type="text" class="w-full border px-2 py-1 rounded" data-day="minggu" data-field="olahraga"></td>
+                <td class="border px-2 py-1"><input type="url" class="w-full border px-2 py-1 rounded" data-day="minggu" data-field="link" placeholder="https://... (opsional)"></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="mt-3 flex items-center gap-2">
+          <button type="button" id="rek-save-weekly" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Simpan Global Plan</button>
+          <button type="button" id="rek-clear-weekly" class="bg-slate-200 text-slate-800 px-3 py-1 rounded hover:bg-slate-300">Kosongkan</button>
+        </div>
+      </div>
+
+      <!-- Daftar Rekomendasi Mingguan -->
+      <div class="mt-6">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-lg font-semibold">Global Plan Mingguan (Tersimpan)</h3>
+          <div class="text-xs text-slate-600">Klik Edit untuk memuat data ke editor di atas.</div>
+        </div>
+        <div id="rek-table-selected-name" class="mb-2 inline-flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-900 text-xs md:text-sm px-3 py-1 rounded-md"></div>
+        <div class="overflow-x-auto">
+          <table class="min-w-max w-full table-auto border-collapse border border-gray-300" id="rekomendasi-weekly-table">
+            <thead>
+              <tr class="bg-gray-100">
+                <th class="border px-2 py-1 whitespace-nowrap">hari</th>
+                <th class="border px-2 py-1 whitespace-nowrap">sarapan</th>
+                <th class="border px-2 py-1 whitespace-nowrap">snack</th>
+                <th class="border px-2 py-1 whitespace-nowrap">makan siang</th>
+                <th class="border px-2 py-1 whitespace-nowrap">makan malam</th>
+                <th class="border px-2 py-1 whitespace-nowrap min-w-[160px]">olahraga yang disarankan</th>
+                <th class="border px-2 py-1 whitespace-nowrap min-w-[240px]">link luar</th>
               </tr>
             </thead>
             <tbody></tbody>
           </table>
+          <div class="mt-2 text-xs text-slate-600" id="weekly-updated-at"></div>
+          <div class="mt-2">
+            <button type="button" class="text-blue-700 hover:underline" id="btn-edit-global">Edit</button>
+            <button type="button" class="text-red-700 hover:underline ml-4" id="btn-del-global">Hapus</button>
+            <button type="button" class="text-red-700 hover:underline ml-4" id="btn-del-all-global">Hapus semua</button>
+          </div>
+          
         </div>
       </div>
+
+      <!-- Legacy rekomendasi list removed; using weekly table above -->
 
       <!-- Minimal JS for CRUD operations -->
       <script>
@@ -612,295 +669,203 @@
         const API_BASE = "/manager";
         const listURL = `${API_BASE}/api/rekomendasi_global/`;
         const createURL = `${API_BASE}/api/rekomendasi_global/create/`;
-        const paramIds = {}; // param name -> rec id
+        const deleteAllURL = `${API_BASE}/api/rekomendasi_global/delete_all/`;
+        let currentGlobalId = null;
+        let currentPlan = null;
+        const defaultParams = ["Gula Darah Puasa","Gula Darah Sewaktu","Tekanan Darah","Cholesterol","Asam Urat"];
 
-        async function loadList(){
+        const dayOrder = ["senin","selasa","rabu","kamis","jumat","sabtu","minggu"];
+        const dayLabels = { senin:"senin", selasa:"selasa", rabu:"rabu", kamis:"kamis", jumat:"jumat", sabtu:"sabtu", minggu:"minggu" };
+        const fields = ["sarapan","snack","makan_siang","makan_malam","olahraga","link"];
+
+        const escapeHtml = (str)=>String(str||'').replace(/[&<>"']/g, (ch)=>({
+          '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;'
+        })[ch]);
+        const linkifyHtml = (raw)=>{
           try{
-            const res = await fetch(listURL, { headers: { 'Accept': 'application/json' } });
-            const data = await res.json();
-            const tbody = document.querySelector('#rekomendasi-table tbody');
-            tbody.innerHTML = '';
-            // Reset paramIds mapping to avoid stale IDs after deletions
-            try{ Object.keys(paramIds).forEach(k=>{ delete paramIds[k]; }); }catch(e){}
-            (data.items || []).forEach(item => {
-              paramIds[item.parameter] = item.id;
-              // Pre-fill textarea if matches
-              const ta = document.querySelector(`textarea[data-param="${item.parameter}"]`);
-              if (ta) ta.value = item.rekomendasi_text || '';
-              // Update char count after prefill
-              try {
-                const cnt = document.querySelector(`[data-char-count="${item.parameter}"]`);
-                if (cnt && ta) cnt.textContent = `${(ta.value||'').length} karakter`;
-              } catch(e){}
-              // linkify helper to convert URLs to anchors safely
-              const escapeHtml = (str)=>String(str||'').replace(/[&<>"']/g, (ch)=>({
-                '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;'
-              })[ch]);
-              const linkifyHtml = (raw)=>{
-                try{
-                  const text = String(raw||'');
-                  const urlRegex = /(https?:\/\/[^\s]+)/g;
-                  let result = '';
-                  let lastIndex = 0;
-                  for (const m of text.matchAll(urlRegex)){
-                    const idx = m.index || 0;
-                    const url = m[0];
-                    result += escapeHtml(text.slice(lastIndex, idx));
-                    const display = escapeHtml(url);
-                    result += `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">${display}</a>`;
-                    lastIndex = idx + url.length;
-                  }
-                  result += escapeHtml(text.slice(lastIndex));
-                  return result;
-                }catch(e){ return escapeHtml(raw||''); }
-              };
-              const tr = document.createElement('tr');
-              tr.innerHTML = `
-                <td class="border px-2 py-1 align-top">${item.parameter}</td>
-                <td class="border px-2 py-1">
-                  <div class="rekomendasi-view whitespace-pre-line">${linkifyHtml(item.rekomendasi_text || '')}</div>
-                  <div class="rekomendasi-edit hidden">
-                    <textarea class="w-full border px-2 py-1 rounded min-h-[80px]" data-edit-textarea="${item.id}">${item.rekomendasi_text || ''}</textarea>
-                    <div class="mt-2 flex gap-2">
-                      <button type="button" class="bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700" data-save-edit="${item.id}" data-param="${item.parameter}">Simpan</button>
-                      <button type="button" class="bg-slate-200 text-slate-800 px-2 py-1 rounded hover:bg-slate-300" data-cancel-edit="${item.id}">Batal</button>
-                    </div>
-                  </div>
-                </td>
-                <td class="border px-2 py-1">${item.created_by || '-'}</td>
-                <td class="border px-2 py-1">${item.updated_at ? new Date(item.updated_at).toLocaleString() : '-'}</td>
-                <td class="border px-2 py-1 text-center">
-                  <div class="flex justify-center gap-3">
-                    <button type="button" class="text-blue-700 hover:underline" data-edit="${item.id}">Edit</button>
-                    <button type="button" class="text-red-700 hover:underline" data-del="${item.id}">Hapus</button>
-                  </div>
-                </td>
-              `;
-              tbody.appendChild(tr);
+            const text = String(raw||'');
+            const patterns = [
+              /(https?:\/\/[^\s]+)/g,
+              /(www\.[^\s]+)/g,
+              /([a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(\/[^\s]*)?)/g,
+            ];
+            let result = escapeHtml(text);
+            const makeLink = (u)=>{
+              const href = (u.startsWith('http://') || u.startsWith('https://')) ? u : `https://${u}`;
+              const display = escapeHtml(u);
+              return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">${display}</a>`;
+            };
+            for (const rx of patterns){
+              result = result.replace(rx, (m)=> makeLink(m));
+            }
+            return result;
+          }catch(e){ return escapeHtml(raw||''); }
+        };
+
+        function readEditor(){
+          const plan = {};
+          dayOrder.forEach(day => {
+            plan[day] = {};
+            fields.forEach(f => {
+              const el = document.querySelector(`#weekly-editor-table input[data-day="${day}"][data-field="${f}"]`);
+              plan[day][f] = (el && el.value ? el.value.trim() : "");
             });
-            // bind delete handlers
-            tbody.querySelectorAll('button[data-del]').forEach(btn => {
-              btn.addEventListener('click', async () => {
-                const id = btn.getAttribute('data-del');
-                try{
-                  await fetch(`${API_BASE}/api/rekomendasi_global/${id}/delete/`, { method: 'DELETE' });
-                  await loadList();
-                }catch(e){ console.error(e); }
-              });
+          });
+          return plan;
+        }
+        function fillEditor(plan){
+          dayOrder.forEach(day => {
+            fields.forEach(f => {
+              const el = document.querySelector(`#weekly-editor-table input[data-day="${day}"][data-field="${f}"]`);
+              if (el) el.value = (plan && plan[day] && plan[day][f]) ? plan[day][f] : '';
             });
-            // bind inline edit handlers
-            tbody.querySelectorAll('button[data-edit]').forEach(btn => {
-              btn.addEventListener('click', () => {
-                const row = btn.closest('tr');
-                if (!row) return;
-                const view = row.querySelector('.rekomendasi-view');
-                const edit = row.querySelector('.rekomendasi-edit');
-                if (view && edit){
-                  view.classList.add('hidden');
-                  edit.classList.remove('hidden');
-                }
-              });
+          });
+        }
+        function clearWeekly(){
+          dayOrder.forEach(day => {
+            fields.forEach(f => {
+              const el = document.querySelector(`#weekly-editor-table input[data-day="${day}"][data-field="${f}"]`);
+              if (el) el.value = '';
             });
-            tbody.querySelectorAll('button[data-cancel-edit]').forEach(btn => {
-              btn.addEventListener('click', () => {
-                const row = btn.closest('tr');
-                if (!row) return;
-                const view = row.querySelector('.rekomendasi-view');
-                const edit = row.querySelector('.rekomendasi-edit');
-                if (view && edit){
-                  edit.classList.add('hidden');
-                  view.classList.remove('hidden');
-                }
-              });
-            });
-            tbody.querySelectorAll('button[data-save-edit]').forEach(btn => {
-              btn.addEventListener('click', async () => {
-                const id = btn.getAttribute('data-save-edit');
-                const paramName = btn.getAttribute('data-param') || '';
-                const row = btn.closest('tr');
-                if (!row) return;
-                const ta = row.querySelector(`textarea[data-edit-textarea="${id}"]`);
-                const text = (ta && ta.value ? ta.value : '').trim();
-                if (!text){ alert('Teks rekomendasi kosong.'); return; }
-                const original = btn.textContent;
-                btn.disabled = true;
-                btn.textContent = 'Menyimpan...';
-                btn.classList.add('opacity-50','cursor-not-allowed');
-                try{
-                  const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
-                  const body = JSON.stringify({ parameter: paramName, rekomendasi_text: text });
-                  await fetch(`${API_BASE}/api/rekomendasi_global/${id}/`, { method: 'PUT', headers, body });
-                  await loadList();
-                }catch(e){
-                  console.error(e);
-                  alert('Gagal menyimpan perubahan.');
-                  btn.textContent = 'Gagal ❌';
-                  setTimeout(() => { btn.textContent = original || 'Simpan'; }, 1200);
-                } finally {
-                  btn.disabled = false;
-                  btn.classList.remove('opacity-50','cursor-not-allowed');
-                }
-              });
-            });
+          });
+        }
+
+        function renderTable(plan, updatedAt){
+          const tbody = document.querySelector('#rekomendasi-weekly-table tbody');
+          if (!tbody) return;
+          tbody.innerHTML = '';
+          dayOrder.forEach(day => {
+            const tr = document.createElement('tr');
+            const p = (plan && plan[day]) ? plan[day] : {};
+            tr.innerHTML = `
+              <td class="border px-2 py-1 font-semibold whitespace-nowrap">${dayLabels[day]}</td>
+              <td class="border px-2 py-1 whitespace-nowrap">${escapeHtml(p.sarapan||'')}</td>
+              <td class="border px-2 py-1 whitespace-nowrap">${escapeHtml(p.snack||'')}</td>
+              <td class="border px-2 py-1 whitespace-nowrap">${escapeHtml(p.makan_siang||'')}</td>
+              <td class="border px-2 py-1 whitespace-nowrap">${escapeHtml(p.makan_malam||'')}</td>
+              <td class="border px-2 py-1 whitespace-nowrap min-w-[160px]">${escapeHtml(p.olahraga||'')}</td>
+              <td class="border px-2 py-1 whitespace-nowrap min-w-[240px]">${linkifyHtml(p.link||'')}</td>
+            `;
+            tbody.appendChild(tr);
+          });
+          const up = document.getElementById('weekly-updated-at');
+          if (up){ up.textContent = updatedAt ? `Terakhir diupdate: ${new Date(updatedAt).toLocaleString()}` : ''; }
+        }
+
+        function getSelectedParam(){
+          const el = document.getElementById('rek-parameter-select');
+          return el ? String(el.value||'').trim() : 'Gula Darah Puasa';
+        }
+
+        async function loadWeeklyGlobal(){
+          try{
+            const res = await fetch(listURL, { headers: { 'Accept':'application/json' } });
+            const j = await res.json();
+            const items = j.items || [];
+            const params = items.map(x => String(x.parameter||'')).filter(p=>p);
+            const selectEl = document.getElementById('rek-parameter-select');
+            if (selectEl){
+              const prev = getSelectedParam();
+              let html = '';
+              const toShow = params.length ? params : defaultParams;
+              toShow.forEach(p => { html += `<option value="${p}">${p}</option>`; });
+              selectEl.innerHTML = html;
+              if (prev && toShow.includes(prev)) selectEl.value = prev; else selectEl.value = toShow[0];
+            }
+            const sel = getSelectedParam();
+            try{
+              const el1 = document.getElementById('rek-editor-selected-name');
+              if (el1) el1.textContent = sel;
+              const el2 = document.getElementById('rek-table-selected-name');
+              if (el2) el2.textContent = `Menampilkan parameter: ${sel}`;
+            }catch(e){}
+            let item = items.find(x => String(x.parameter||'') === sel);
+            if (!item){ currentGlobalId = null; currentPlan = null; renderTable(null, null); return; }
+            currentGlobalId = item.id || null;
+            // Prefer weekly_plan; fallback to legacy weekly day text -> map to sarapan only
+            const plan = item.weekly_plan || null;
+            if (plan){ currentPlan = plan; }
+            else {
+              const w = item.weekly || {};
+              const legacyMap = {};
+              dayOrder.forEach(day => { legacyMap[day] = { sarapan: w[day]||'', snack:'', makan_siang:'', makan_malam:'', olahraga:'', link:'' }; });
+              currentPlan = legacyMap;
+            }
+            renderTable(currentPlan, item.updated_at);
           }catch(e){ console.error(e); }
         }
 
-        async function saveParam(param){
-          const ta = document.querySelector(`textarea[data-param="${param}"]`);
-          if (!ta) return;
-          const text = (ta.value || '').trim();
-          if (!text) { alert('Teks rekomendasi kosong.'); return; }
-          const btn = document.querySelector(`button[data-save="${param}"]`);
+        async function saveWeekly(){
+          const btn = document.getElementById('rek-save-weekly');
           const originalLabel = btn ? btn.textContent : '';
-          // Set disabled UI state
-          if (btn){
-            btn.disabled = true;
-            btn.textContent = 'Menyimpan...';
-            btn.classList.add('opacity-50','cursor-not-allowed');
-          }
+          if (btn){ btn.disabled = true; btn.textContent = 'Menyimpan...'; btn.classList.add('opacity-50','cursor-not-allowed'); }
           try{
+            const plan = readEditor();
             const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
-            const body = JSON.stringify({ parameter: param, rekomendasi_text: text });
-            if (paramIds[param]){
-              await fetch(`${API_BASE}/api/rekomendasi_global/${paramIds[param]}/`, { method: 'PUT', headers, body });
+            const body = JSON.stringify({ parameter: getSelectedParam(), weekly_plan: plan });
+            if (currentGlobalId){
+              await fetch(`${API_BASE}/api/rekomendasi_global/${currentGlobalId}/`, { method: 'PUT', headers, body });
             } else {
               const res = await fetch(createURL, { method: 'POST', headers, body });
               const j = await res.json();
-              if (j && j.id) paramIds[param] = j.id;
+              currentGlobalId = j && j.id ? j.id : null;
             }
-            // Success feedback
-            if (btn){
-              btn.textContent = 'Tersimpan ✓';
-              setTimeout(() => {
-                btn.textContent = originalLabel || 'Simpan';
-              }, 1000);
-            }
-            await loadList();
+            if (btn){ btn.textContent = 'Tersimpan ✓'; setTimeout(()=>{ btn.textContent = originalLabel || 'Simpan Global Plan'; }, 1000); }
+            await loadWeeklyGlobal();
           }catch(e){
             console.error(e);
-            alert('Gagal menyimpan rekomendasi.');
-            if (btn){
-              btn.textContent = 'Gagal ❌';
-              setTimeout(() => {
-                btn.textContent = originalLabel || 'Simpan';
-              }, 1200);
-            }
+            alert('Gagal menyimpan Global Plan.');
+            if (btn){ btn.textContent = 'Gagal ❌'; setTimeout(()=>{ btn.textContent = originalLabel || 'Simpan Global Plan'; }, 1200); }
           } finally {
-            // Restore button state
-            if (btn){
-              btn.disabled = false;
-              btn.classList.remove('opacity-50','cursor-not-allowed');
-            }
+            if (btn){ btn.disabled = false; btn.classList.remove('opacity-50','cursor-not-allowed'); }
           }
         }
 
-        async function saveAll(){
-          const btnAll = document.getElementById('save-all-rekomendasi');
-          const original = btnAll ? btnAll.textContent : '';
+        async function deleteGlobal(){
+          if (!currentGlobalId){ alert('Tidak ada Global Plan untuk dihapus.'); return; }
+          if (!confirm('Yakin ingin menghapus Global Plan?')) return;
           try{
-            const areas = Array.from(document.querySelectorAll('#rekomendasi-inputs textarea[data-param]'));
-            const items = areas.map(ta => ({ param: ta.dataset.param, text: (ta.value||'').trim() }))
-                               .filter(it => it.text.length > 0);
-            if (!items.length) { alert('Tidak ada rekomendasi yang diisi.'); return; }
-            if (!confirm('Yakin ingin menyimpan SEMUA rekomendasi yang terisi?')) { return; }
-            if (btnAll){
-              btnAll.disabled = true;
-              btnAll.textContent = 'Menyimpan semua...';
-              btnAll.classList.add('opacity-50','cursor-not-allowed');
-            }
-            const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
-            for (const it of items){
-              const body = JSON.stringify({ parameter: it.param, rekomendasi_text: it.text });
-              if (paramIds[it.param]){
-                await fetch(`${API_BASE}/api/rekomendasi_global/${paramIds[it.param]}/`, { method: 'PUT', headers, body });
-              } else {
-                const res = await fetch(createURL, { method: 'POST', headers, body });
-                const j = await res.json();
-                if (j && j.id) paramIds[it.param] = j.id;
-              }
-            }
-            if (btnAll){ btnAll.textContent = 'Tersimpan semua ✓'; }
-            await loadList();
-          }catch(e){
-            console.error(e);
-            alert('Gagal menyimpan sebagian/semua rekomendasi.');
-            if (btnAll){ btnAll.textContent = 'Gagal ❌'; }
-          }finally{
-            if (btnAll){
-              setTimeout(() => { btnAll.textContent = original || 'Simpan semua'; }, 1200);
-              btnAll.disabled = false;
-              btnAll.classList.remove('opacity-50','cursor-not-allowed');
-            }
-          }
+            await fetch(`${API_BASE}/api/rekomendasi_global/${currentGlobalId}/delete/`, { method: 'DELETE' });
+            currentGlobalId = null; currentPlan = null;
+            renderTable(null, null);
+            clearWeekly();
+          }catch(e){ console.error(e); alert('Gagal menghapus.'); }
         }
 
-        async function deleteAll(){
-          const btnDelAll = document.getElementById('delete-all-rekomendasi');
-          const original = btnDelAll ? btnDelAll.textContent : '';
-          try{
-            const tbody = document.querySelector('#rekomendasi-table tbody');
-            const delBtns = Array.from(tbody.querySelectorAll('button[data-del]'));
-            if (!delBtns.length) { alert('Tidak ada rekomendasi untuk dihapus.'); return; }
-            if (!confirm('Yakin ingin menghapus SEMUA rekomendasi global? Tindakan ini tidak dapat dibatalkan.')) { return; }
-            if (btnDelAll){
-              btnDelAll.disabled = true;
-              btnDelAll.textContent = 'Menghapus semua...';
-              btnDelAll.classList.add('opacity-50','cursor-not-allowed');
-            }
-            for (const b of delBtns){
-              const id = b.getAttribute('data-del');
-              try{ await fetch(`${API_BASE}/api/rekomendasi_global/${id}/delete/`, { method: 'DELETE' }); }catch(e){ console.error(e); }
-            }
-            if (btnDelAll){ btnDelAll.textContent = 'Terhapus semua ✓'; }
-            await loadList();
-          }catch(e){
-            console.error(e);
-            alert('Gagal menghapus sebagian/semua rekomendasi.');
-            if (btnDelAll){ btnDelAll.textContent = 'Gagal ❌'; }
-          }finally{
-            if (btnDelAll){
-              setTimeout(() => { btnDelAll.textContent = original || 'Hapus semua'; }, 1200);
-              btnDelAll.disabled = false;
-              btnDelAll.classList.remove('opacity-50','cursor-not-allowed');
-            }
-          }
-        }
+        // Bind actions
+        const btnSaveWeekly = document.getElementById('rek-save-weekly');
+        if (btnSaveWeekly){ btnSaveWeekly.addEventListener('click', () => { try{ saveWeekly(); }catch(e){ console.error(e); } }); }
+        const btnClearWeekly = document.getElementById('rek-clear-weekly');
+        if (btnClearWeekly){ btnClearWeekly.addEventListener('click', () => { try{ clearWeekly(); }catch(e){ console.error(e); } }); }
+        const btnEditGlobal = document.getElementById('btn-edit-global');
+        if (btnEditGlobal){ btnEditGlobal.addEventListener('click', () => { try{ fillEditor(currentPlan||{}); const editor=document.getElementById('rekomendasi-weekly-editor'); if(editor){ window.scrollTo({ top: editor.offsetTop-80, behavior:'smooth' }); } }catch(e){ console.error(e); } }); }
+        const btnDelGlobal = document.getElementById('btn-del-global');
+        if (btnDelGlobal){ btnDelGlobal.addEventListener('click', () => { try{ deleteGlobal(); }catch(e){ console.error(e); } }); }
 
-        // Bind save events
-        document.querySelectorAll('#rekomendasi-inputs button[data-save]').forEach(btn => {
-          const param = btn.getAttribute('data-save');
-          btn.addEventListener('click', () => saveParam(param));
-        });
-
-        // Initialize fancy char counters and live updates
-        (function initCharCounts(){
-          try{
-            document.querySelectorAll('#rekomendasi-inputs textarea[data-param]').forEach(ta => {
-              const param = ta.getAttribute('data-param');
-              const cnt = document.querySelector(`[data-char-count="${param}"]`);
-              if (cnt){ cnt.textContent = `${(ta.value||'').length} karakter`; }
-              ta.addEventListener('input', () => {
-                try { if (cnt) cnt.textContent = `${(ta.value||'').length} karakter`; } catch(e){}
-              });
-            });
-          }catch(e){ console.error(e); }
-        })();
-
-        // Bind bulk save
-        const btnAll = document.getElementById('save-all-rekomendasi');
-        if (btnAll) {
-          btnAll.addEventListener('click', () => { try{ saveAll(); }catch(e){ console.error(e); } });
-        }
-
-        // Bind bulk delete
-        const btnDelAll = document.getElementById('delete-all-rekomendasi');
-        if (btnDelAll) {
-          btnDelAll.addEventListener('click', () => { try{ deleteAll(); }catch(e){ console.error(e); } });
+        const btnDelAll = document.getElementById('btn-del-all-global');
+        if (btnDelAll){
+          btnDelAll.addEventListener('click', async () => {
+            try{
+              if (!confirm('Yakin ingin menghapus semua Global Plan?')) return;
+              const res = await fetch(deleteAllURL, { method: 'DELETE' });
+              if (res.ok){ currentGlobalId = null; currentPlan = null; renderTable(null, null); clearWeekly(); loadWeeklyGlobal(); alert('Semua Global Plan telah dihapus.'); }
+              else { alert('Gagal menghapus semua Global Plan.'); }
+            }catch(e){ console.error(e); alert('Terjadi kesalahan saat menghapus semua.'); }
+          });
         }
 
         // Initial load when tab is present
         if (document.getElementById('rekomendasi-tab')){
-          loadList();
+          loadWeeklyGlobal();
+        }
+        const paramSel = document.getElementById('rek-parameter-select');
+        if (paramSel){ paramSel.addEventListener('change', () => { try{ const s=getSelectedParam(); const el1=document.getElementById('rek-editor-selected-name'); if(el1) el1.textContent=s; const el2=document.getElementById('rek-table-selected-name'); if(el2) el2.textContent=`Menampilkan parameter: ${s}`; clearWeekly(); loadWeeklyGlobal(); }catch(e){ console.error(e); } }); }
+        const upBtn = document.getElementById('rek-upload-btn');
+        const upFile = document.getElementById('rek-upload-file');
+        const upForm = document.getElementById('rek-upload-form');
+        if (upBtn && upFile && upForm) {
+          upBtn.addEventListener('click', function(){ try{ upFile.click(); }catch(e){} });
+          upFile.addEventListener('change', function(){ try{ if (upFile.files && upFile.files.length) { upForm.submit(); } }catch(e){} });
         }
       })();
       </script>

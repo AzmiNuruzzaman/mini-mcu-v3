@@ -47,6 +47,7 @@ urlpatterns = [
     path("download-checkup-template/", manager_views.download_checkup_template, name="download_checkup_template"),
     path("upload-master-karyawan/", manager_views.upload_master_karyawan_xls, name="upload_master_karyawan_xls"),
     path("upload-medical-checkup/", manager_views.upload_medical_checkup_xls, name="upload_medical_checkup_xls"),
+    path("upload-rekomendasi/", manager_views.upload_rekomendasi_xls, name="upload_rekomendasi_xls"),
     path("export-checkup-data/", manager_views.export_checkup_data_excel, name="export_checkup_data"),
     path("export-master-karyawan/", manager_views.export_master_karyawan_excel, name="export_master_karyawan"),
     # NEW: Export history by UID and single checkup
@@ -70,6 +71,7 @@ urlpatterns = [
     path("api/rekomendasi_global/create/", manager_views.rekomendasi_global_create_json, name="rekomendasi_global_create_json"),
     path("api/rekomendasi_global/<int:rec_id>/", manager_views.rekomendasi_global_update_json, name="rekomendasi_global_update_json"),
     path("api/rekomendasi_global/<int:rec_id>/delete/", manager_views.rekomendasi_global_delete_json, name="rekomendasi_global_delete_json"),
+    path("api/rekomendasi_global/delete_all/", manager_views.rekomendasi_global_delete_all_json, name="rekomendasi_global_delete_all_json"),
 
     # ===============================
     # UPLOAD LOG MANAGEMENT
