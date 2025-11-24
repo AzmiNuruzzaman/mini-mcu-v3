@@ -218,7 +218,9 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
         // Global recommendations cache (per parameter)
         globalRecByParam: {},
         _globalRecLoaded: false,
-        recommendationSelectedParam: ''
+        recommendationSelectedParam: '',
+        recommendationsBottom: false,
+        forceShowGlobalRecommendations: false
       };
     },
     computed:{
@@ -351,10 +353,14 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
           const hideSel = rootEl.dataset.hideSelectors === 'true';
           const hideUnwell = rootEl.dataset.hideUnwell === 'true';
           const hideKSelect = rootEl.dataset.hideKaryawanSelect === 'true';
+          const recBottom = rootEl.dataset.recommendationsBottom === 'true';
+          const recAlways = rootEl.dataset.recommendationsAlways === 'true';
           if (preUid) { this.filters.karyawan_uid = String(preUid); }
           if (hideSel) { this.showSelectors = false; }
           if (hideUnwell) { this.showWellTab = false; this.tab = 'health'; }
           if (hideKSelect) { this.hideKaryawanSelect = true; }
+          this.recommendationsBottom = !!recBottom;
+          this.forceShowGlobalRecommendations = !!recAlways;
         }
         this.applyDefaultFilters();
         // Seed healthMetrics card model from metricsList
@@ -1470,7 +1476,7 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
           </div>
 
           <!-- Recommendation snippet container: fancy section between graph and data table -->
-          <div v-if="tab==='health' && hasHealthDataForSelection && currentExceedRecommendations.length" class="mt-4 bg-white border rounded-xl shadow-sm">
+          <div v-if="tab==='health' && !recommendationsBottom && hasHealthDataForSelection && currentExceedRecommendations.length" class="mt-4 bg-white border rounded-xl shadow-sm">
             <!-- Header -->
             <div class="px-4 pt-4">
               <div class="flex items-center gap-2">
@@ -1604,7 +1610,7 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
             </div>
           </div>
           <!-- Fallback: show global recommendations list when no exceed recommendations (public QR view) -->
-          <div v-else-if="tab==='health' && hasHealthDataForSelection && globalRecommendationList.length" class="mt-4 bg-white border rounded-xl shadow-sm">
+          <div v-else-if="tab==='health' && !recommendationsBottom && (hasHealthDataForSelection || forceShowGlobalRecommendations) && globalRecommendationList.length" class="mt-4 bg-white border rounded-xl shadow-sm">
             <div class="px-4 pt-4">
               <div class="flex items-center gap-2">
                 <i data-lucide="sparkles" class="w-4 h-4 text-amber-600"></i>
@@ -1780,6 +1786,253 @@ const SAFE_WINDOW_MONTHS = 24; // limit to last 24 months when datasets are larg
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          <div v-if="tab==='health' && recommendationsBottom && hasHealthDataForSelection && currentExceedRecommendations.length" class="mt-4 bg-white border rounded-xl shadow-sm">
+            <div class="px-4 pt-4">
+              <div class="flex items-center gap-2">
+                <i data-lucide="sparkles" class="w-4 h-4 text-amber-600"></i>
+                <h3 class="text-slate-900 font-semibold">Rekomendasi Kesehatan</h3>
+                <span class="ml-2 inline-flex items-center rounded-full bg-amber-100 text-amber-900 px-2 py-0.5 text-xs font-semibold border border-amber-200">{{ monthLabelFromISO(latestExceedMonthISO) }}</span>
+              </div>
+              <div class="mt-1 text-xs text-slate-500">Sumber: rekomendasi global per parameter</div>
+              <div class="mt-2 h-px bg-gradient-to-r from-amber-200 via-amber-300 to-transparent"></div>
+              <div v-if="currentExceedRecommendations.length>1" class="mt-3">
+                <label class="text-xs font-medium text-slate-700">Parameter aktif</label>
+                <select v-model="recommendationSelectedParam" class="border rounded px-2 py-1 text-xs">
+                  <option v-for="p in currentExceedParams" :key="p" :value="p">{{ p }}</option>
+                </select>
+              </div>
+            </div>
+            <div class="px-4 pb-4 mt-3">
+              <div class="grid grid-cols-1 gap-3">
+                <div
+                  v-for="r in currentExceedRecommendationsFiltered"
+                  :key="r.parameter"
+                  class="group relative rounded-lg border border-amber-200 bg-amber-50/60 hover:bg-amber-50 shadow-sm hover:shadow-md transition-shadow"
+                >
+                  <div class="flex items-start gap-3 px-3 py-2">
+                    <div class="mt-0.5">
+                      <i data-lucide="lightbulb" class="w-4 h-4 text-amber-600"></i>
+                    </div>
+                    <div class="flex-1">
+                      <div class="flex items-center gap-2 mb-1">
+                        <span class="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-900 px-2 py-0.5 text-xs font-semibold border border-amber-200">{{ r.parameter }}</span>
+                      </div>
+                      <div class="text-sm leading-snug text-amber-900">
+                        <template v-if="weeklyPlanHasContent(r.weekly_plan)">
+                          <table class="w-full text-xs rounded-md border border-amber-200/60 bg-amber-50/40">
+                            <thead>
+                              <tr class="border-b">
+                                <th class="text-left py-1 px-1 w-20">Hari</th>
+                                <th class="text-left py-1 px-1">Sarapan</th>
+                                <th class="text-left py-1 px-1">Snack</th>
+                                <th class="text-left py-1 px-1">Makan Siang</th>
+                                <th class="text-left py-1 px-1">Makan Malam</th>
+                                <th class="text-left py-1 px-1">Olahraga yang Disarankan</th>
+                                <th class="text-left py-1 px-1">Link luar (youtube etc)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr class="border-b">
+                                <td class="py-1 px-1">Senin</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.senin && r.weekly_plan.senin.sarapan) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.senin && r.weekly_plan.senin.snack) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.senin && r.weekly_plan.senin.makan_siang) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.senin && r.weekly_plan.senin.makan_malam) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.senin && r.weekly_plan.senin.olahraga) || '' }}</td>
+                                <td class="py-1 px-1" v-html="linkifyText((r.weekly_plan && r.weekly_plan.senin && r.weekly_plan.senin.link) || '')"></td>
+                              </tr>
+                              <tr class="border-b">
+                                <td class="py-1 px-1">Selasa</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.selasa && r.weekly_plan.selasa.sarapan) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.selasa && r.weekly_plan.selasa.snack) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.selasa && r.weekly_plan.selasa.makan_siang) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.selasa && r.weekly_plan.selasa.makan_malam) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.selasa && r.weekly_plan.selasa.olahraga) || '' }}</td>
+                                <td class="py-1 px-1" v-html="linkifyText((r.weekly_plan && r.weekly_plan.selasa && r.weekly_plan.selasa.link) || '')"></td>
+                              </tr>
+                              <tr class="border-b">
+                                <td class="py-1 px-1">Rabu</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.rabu && r.weekly_plan.rabu.sarapan) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.rabu && r.weekly_plan.rabu.snack) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.rabu && r.weekly_plan.rabu.makan_siang) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.rabu && r.weekly_plan.rabu.makan_malam) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.rabu && r.weekly_plan.rabu.olahraga) || '' }}</td>
+                                <td class="py-1 px-1" v-html="linkifyText((r.weekly_plan && r.weekly_plan.rabu && r.weekly_plan.rabu.link) || '')"></td>
+                              </tr>
+                              <tr class="border-b">
+                                <td class="py-1 px-1">Kamis</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.kamis && r.weekly_plan.kamis.sarapan) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.kamis && r.weekly_plan.kamis.snack) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.kamis && r.weekly_plan.kamis.makan_siang) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.kamis && r.weekly_plan.kamis.makan_malam) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.kamis && r.weekly_plan.kamis.olahraga) || '' }}</td>
+                                <td class="py-1 px-1" v-html="linkifyText((r.weekly_plan && r.weekly_plan.kamis && r.weekly_plan.kamis.link) || '')"></td>
+                              </tr>
+                              <tr class="border-b">
+                                <td class="py-1 px-1">Jumat</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.jumat && r.weekly_plan.jumat.sarapan) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.jumat && r.weekly_plan.jumat.snack) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.jumat && r.weekly_plan.jumat.makan_siang) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.jumat && r.weekly_plan.jumat.makan_malam) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.jumat && r.weekly_plan.jumat.olahraga) || '' }}</td>
+                                <td class="py-1 px-1" v-html="linkifyText((r.weekly_plan && r.weekly_plan.jumat && r.weekly_plan.jumat.link) || '')"></td>
+                              </tr>
+                              <tr class="border-b">
+                                <td class="py-1 px-1">Sabtu</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.sabtu && r.weekly_plan.sabtu.sarapan) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.sabtu && r.weekly_plan.sabtu.snack) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.sabtu && r.weekly_plan.sabtu.makan_siang) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.sabtu && r.weekly_plan.sabtu.makan_malam) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.sabtu && r.weekly_plan.sabtu.olahraga) || '' }}</td>
+                                <td class="py-1 px-1" v-html="linkifyText((r.weekly_plan && r.weekly_plan.sabtu && r.weekly_plan.sabtu.link) || '')"></td>
+                              </tr>
+                              <tr>
+                                <td class="py-1 px-1">Minggu</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.minggu && r.weekly_plan.minggu.sarapan) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.minggu && r.weekly_plan.minggu.snack) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.minggu && r.weekly_plan.minggu.makan_siang) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.minggu && r.weekly_plan.minggu.makan_malam) || '' }}</td>
+                                <td class="py-1 px-1">{{ (r.weekly_plan && r.weekly_plan.minggu && r.weekly_plan.minggu.olahraga) || '' }}</td>
+                                <td class="py-1 px-1" v-html="linkifyText((r.weekly_plan && r.weekly_plan.minggu && r.weekly_plan.minggu.link) || '')"></td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </template>
+                        <template v-else-if="hasWeekly(r.weekly)">
+                          <div class="rounded-md border border-amber-200/60 bg-amber-50/40 divide-y divide-amber-200/60">
+                            <div v-for="row in weeklyRows(r.weekly, true)" :key="row.label" class="px-2 py-1">
+                              <span class="font-semibold text-amber-900">{{ row.label }}:</span>
+                              <span class="text-amber-900" v-html="linkifyText(row.text)"></span>
+                            </div>
+                          </div>
+                        </template>
+                        <template v-else>
+                          <span v-html="linkifyText(r.text)"></span>
+                        </template>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-else-if="tab==='health' && recommendationsBottom && (hasHealthDataForSelection || forceShowGlobalRecommendations) && globalRecommendationList.length" class="mt-4 bg-white border rounded-xl shadow-sm">
+            <div class="px-4 pt-4">
+              <div class="flex items-center gap-2">
+                <i data-lucide="sparkles" class="w-4 h-4 text-amber-600"></i>
+                <h3 class="text-slate-900 font-semibold">Rekomendasi Kesehatan (Global)</h3>
+              </div>
+              <div class="mt-1 text-xs text-slate-500">Ditampilkan untuk edukasi umum. Sumber: rekomendasi global per parameter.</div>
+              <div class="mt-2 h-px bg-gradient-to-r from-amber-200 via-amber-300 to-transparent"></div>
+            </div>
+            <div class="px-4 pb-4 mt-3">
+              <div class="grid grid-cols-1 gap-3">
+                <div
+                  v-for="g in globalRecommendationList"
+                  :key="g.parameter"
+                  class="group relative rounded-lg border border-amber-200 bg-amber-50/60 hover:bg-amber-50 shadow-sm hover:shadow-md transition-shadow"
+                >
+                  <div class="flex items-start gap-3 px-3 py-2">
+                    <div class="mt-0.5">
+                      <i data-lucide="lightbulb" class="w-4 h-4 text-amber-600"></i>
+                    </div>
+                    <div class="flex-1">
+                      <div class="flex items-center gap-2 mb-1">
+                        <span class="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-900 px-2 py-0.5 text-xs font-semibold border border-amber-200">{{ g.parameter }}</span>
+                      </div>
+                      <div class="text-sm leading-snug text-amber-900">
+                        <template v-if="weeklyPlanHasContent(g.weekly_plan)">
+                          <table class="w-full text-xs rounded-md border border-amber-200/60 bg-amber-50/40">
+                            <thead>
+                              <tr class="border-b">
+                                <th class="text-left py-1 px-1 w-20">Hari</th>
+                                <th class="text-left py-1 px-1">Sarapan</th>
+                                <th class="text-left py-1 px-1">Snack</th>
+                                <th class="text-left py-1 px-1">Makan Siang</th>
+                                <th class="text-left py-1 px-1">Makan Malam</th>
+                                <th class="text-left py-1 px-1">Olahraga yang Disarankan</th>
+                                <th class="text-left py-1 px-1">Link luar (youtube etc)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr class="border-b">
+                                <td class="py-1 px-1">Senin</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.senin && g.weekly_plan.senin.sarapan) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.senin && g.weekly_plan.senin.snack) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.senin && g.weekly_plan.senin.makan_siang) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.senin && g.weekly_plan.senin.makan_malam) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.senin && g.weekly_plan.senin.olahraga) || '' }}</td>
+                                <td class="py-1 px-1" v-html="linkifyText((g.weekly_plan && g.weekly_plan.senin && g.weekly_plan.senin.link) || '')"></td>
+                              </tr>
+                              <tr class="border-b">
+                                <td class="py-1 px-1">Selasa</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.selasa && g.weekly_plan.selasa.sarapan) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.selasa && g.weekly_plan.selasa.snack) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.selasa && g.weekly_plan.selasa.makan_siang) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.selasa && g.weekly_plan.selasa.makan_malam) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.selasa && g.weekly_plan.selasa.olahraga) || '' }}</td>
+                                <td class="py-1 px-1" v-html="linkifyText((g.weekly_plan && g.weekly_plan.selasa && g.weekly_plan.selasa.link) || '')"></td>
+                              </tr>
+                              <tr class="border-b">
+                                <td class="py-1 px-1">Rabu</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.rabu && g.weekly_plan.rabu.sarapan) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.rabu && g.weekly_plan.rabu.snack) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.rabu && g.weekly_plan.rabu.makan_siang) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.rabu && g.weekly_plan.rabu.makan_malam) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.rabu && g.weekly_plan.rabu.olahraga) || '' }}</td>
+                                <td class="py-1 px-1" v-html="linkifyText((g.weekly_plan && g.weekly_plan.rabu && g.weekly_plan.rabu.link) || '')"></td>
+                              </tr>
+                              <tr class="border-b">
+                                <td class="py-1 px-1">Kamis</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.kamis && g.weekly_plan.kamis.sarapan) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.kamis && g.weekly_plan.kamis.snack) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.kamis && g.weekly_plan.kamis.makan_siang) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.kamis && g.weekly_plan.kamis.makan_malam) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.kamis && g.weekly_plan.kamis.olahraga) || '' }}</td>
+                                <td class="py-1 px-1" v-html="linkifyText((g.weekly_plan && g.weekly_plan.kamis && g.weekly_plan.kamis.link) || '')"></td>
+                              </tr>
+                              <tr class="border-b">
+                                <td class="py-1 px-1">Jumat</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.jumat && g.weekly_plan.jumat.sarapan) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.jumat && g.weekly_plan.jumat.snack) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.jumat && g.weekly_plan.jumat.makan_siang) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.jumat && g.weekly_plan.jumat.makan_malam) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.jumat && g.weekly_plan.jumat.olahraga) || '' }}</td>
+                                <td class="py-1 px-1" v-html="linkifyText((g.weekly_plan && g.weekly_plan.jumat && g.weekly_plan.jumat.link) || '')"></td>
+                              </tr>
+                              <tr class="border-b">
+                                <td class="py-1 px-1">Sabtu</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.sabtu && g.weekly_plan.sabtu.sarapan) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.sabtu && g.weekly_plan.sabtu.snack) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.sabtu && g.weekly_plan.sabtu.makan_siang) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.sabtu && g.weekly_plan.sabtu.makan_malam) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.sabtu && g.weekly_plan.sabtu.olahraga) || '' }}</td>
+                                <td class="py-1 px-1" v-html="linkifyText((g.weekly_plan && g.weekly_plan.sabtu && g.weekly_plan.sabtu.link) || '')"></td>
+                              </tr>
+                              <tr>
+                                <td class="py-1 px-1">Minggu</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.minggu && g.weekly_plan.minggu.sarapan) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.minggu && g.weekly_plan.minggu.snack) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.minggu && g.weekly_plan.minggu.makan_siang) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.minggu && g.weekly_plan.minggu.makan_malam) || '' }}</td>
+                                <td class="py-1 px-1">{{ (g.weekly_plan && g.weekly_plan.minggu && g.weekly_plan.minggu.olahraga) || '' }}</td>
+                                <td class="py-1 px-1" v-html="linkifyText((g.weekly_plan && g.weekly_plan.minggu && g.weekly_plan.minggu.link) || '')"></td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </template>
+                        <template v-else>
+                          <span v-html="linkifyText(g.text)"></span>
+                        </template>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Unwell Details Table (Bulan vs Karyawan Unwell) -->

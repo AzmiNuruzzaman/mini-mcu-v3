@@ -475,21 +475,11 @@ def health_metrics_summary_json(request):
 
 @require_http_methods(["GET"])
 def rekomendasi_global_list(request):
-    """Public read-only list of global health recommendations.
+    """Public read-only list of global health recommendations (QR view).
 
-    Returns a JSON payload compatible with GrafikManager:
-    {
-      "items": [
-        {
-          "parameter": "Gula Darah Puasa",
-          "rekomendasi_text": "...",
-          "weekly": { "senin":"...","selasa":"...","rabu":"...","kamis":"...","jumat":"...","sabtu":"...","minggu":"..." },
-          "updated_at": "...",
-          "created_at": "..."
-        },
-        ...
-      ]
-    }
+    Aligns payload shape with Manager/Nurse API to ensure frontend renders
+    identical content: includes `rekomendasi_text`, `weekly_plan` (structured),
+    and legacy `weekly` strings.
     """
     try:
         from core.core_models import RekomendasiKesehatan
@@ -497,29 +487,67 @@ def rekomendasi_global_list(request):
         return JsonResponse({"items": [], "error": f"model import failed: {e}"})
 
     try:
-        # Some deployments may not have a created_at field on RekomendasiKesehatan.
-        # Order by updated_at only to avoid ORM errors.
         qs = RekomendasiKesehatan.objects.all().order_by('-updated_at')
         items = []
         for rec in qs:
             try:
+                param = rec.parameter or ""
+                wp = getattr(rec, 'weekly_plan', None)
+                weekly = {
+                    "senin": getattr(rec, 'senin_text', None) or "",
+                    "selasa": getattr(rec, 'selasa_text', None) or "",
+                    "rabu": getattr(rec, 'rabu_text', None) or "",
+                    "kamis": getattr(rec, 'kamis_text', None) or "",
+                    "jumat": getattr(rec, 'jumat_text', None) or "",
+                    "sabtu": getattr(rec, 'sabtu_text', None) or "",
+                    "minggu": getattr(rec, 'minggu_text', None) or "",
+                }
+
+                display_text = (rec.rekomendasi_text or "").strip()
+                if not display_text:
+                    try:
+                        # Build readable text from structured weekly_plan when available
+                        if isinstance(wp, dict):
+                            day_order = ['senin','selasa','rabu','kamis','jumat','sabtu','minggu']
+                            day_labels = { 'senin':'Senin', 'selasa':'Selasa', 'rabu':'Rabu', 'kamis':'Kamis', 'jumat':'Jumat', 'sabtu':'Sabtu', 'minggu':'Minggu' }
+                            field_order = ['sarapan','snack','makan_siang','makan_malam','olahraga','link']
+                            field_labels = { 'sarapan':'Sarapan', 'snack':'Snack', 'makan_siang':'Makan Siang', 'makan_malam':'Makan Malam', 'olahraga':'Olahraga', 'link':'Link' }
+                            lines = []
+                            for d in day_order:
+                                obj = wp.get(d) or {}
+                                parts = []
+                                for f in field_order:
+                                    val = (obj.get(f) or '').strip()
+                                    if val:
+                                        parts.append(f"{field_labels[f]}: {val}")
+                                if parts:
+                                    lines.append(f"{day_labels[d]}: {'; '.join(parts)}")
+                            display_text = "\n".join(lines)
+                    except Exception:
+                        display_text = ''
+                if not display_text:
+                    try:
+                        # Fallback to legacy weekly strings
+                        day_order = ['senin','selasa','rabu','kamis','jumat','sabtu','minggu']
+                        day_labels = { 'senin':'Senin', 'selasa':'Selasa', 'rabu':'Rabu', 'kamis':'Kamis', 'jumat':'Jumat', 'sabtu':'Sabtu', 'minggu':'Minggu' }
+                        lines = []
+                        for d in day_order:
+                            val = (weekly.get(d) or '').strip()
+                            if val:
+                                lines.append(f"{day_labels[d]}: {val}")
+                        display_text = "\n".join(lines)
+                    except Exception:
+                        display_text = ''
+
                 items.append({
-                    "parameter": rec.parameter or "",
-                    "rekomendasi_text": rec.rekomendasi_text or "",
-                    "weekly": {
-                        "senin": getattr(rec, 'senin_text', None) or "",
-                        "selasa": getattr(rec, 'selasa_text', None) or "",
-                        "rabu": getattr(rec, 'rabu_text', None) or "",
-                        "kamis": getattr(rec, 'kamis_text', None) or "",
-                        "jumat": getattr(rec, 'jumat_text', None) or "",
-                        "sabtu": getattr(rec, 'sabtu_text', None) or "",
-                        "minggu": getattr(rec, 'minggu_text', None) or "",
-                    },
+                    "parameter": param,
+                    "rekomendasi_text": display_text,
+                    "weekly_plan": wp if isinstance(wp, dict) else None,
+                    "weekly": weekly,
                     "updated_at": getattr(rec, 'updated_at', None).isoformat() if getattr(rec, 'updated_at', None) else "",
                     "created_at": getattr(rec, 'created_at', None).isoformat() if getattr(rec, 'created_at', None) else "",
                 })
             except Exception:
-                # Defensive: continue even if a single record has issues
                 continue
         return JsonResponse({"items": items})
     except Exception as e:
