@@ -91,20 +91,10 @@
       @media (max-width: 768px){
         #edit-content{ padding: 0.75rem; }
         #profile-identity .flex{ flex-direction: column; gap: 0.75rem; }
-        .desktop-table{ display: none; }
-        .mobile-card{ display: block; }
-        .mobile-card .card{ margin-top: 0.75rem; border: 1px solid #e5e7eb; border-radius: 0.75rem; background: #ffffff; }
-        .mobile-card .card-header{ padding: 0.75rem; font-weight: 600; color: #111827; border-bottom: 1px solid #e5e7eb; }
-        .mobile-card .card-row{ display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0.75rem; border-bottom: 1px solid #f1f5f9; }
-        .mobile-card .card-row:last-child{ border-bottom: none; }
-        .mobile-card .card-label{ font-weight: 600; color: #374151; }
-        .mobile-card .card-value{ color: #111827; text-align: right; }
         .badge{ display:inline-block; padding: 0.125rem 0.375rem; border-radius: 9999px; font-size: 0.75rem; }
+        table.min-w-full th, table.min-w-full td{ padding: 0.5rem; }
       }
-      @media (min-width: 769px){
-        .desktop-table{ display: block; }
-        .mobile-card{ display: none; }
-      }
+      @media (min-width: 769px){ }
       </style>
       {% endif %}
 
@@ -309,28 +299,7 @@
             </tbody>
           </table>
         </div>
-        <div class="mobile-card">
-          <div class="card">
-            <div class="card-header">Data Karyawan</div>
-            <div class="card-row"><div class="card-label">Nama</div><div class="card-value">{{ employee.nama }}</div></div>
-            <div class="card-row"><div class="card-label">UID</div><div class="card-value"><span class="font-mono">{{ employee.uid }}</span></div></div>
-            <div class="card-row"><div class="card-label">Jabatan</div><div class="card-value">{{ employee.jabatan|default:"-" }}</div></div>
-            <div class="card-row"><div class="card-label">Lokasi</div><div class="card-value">{{ employee.lokasi|default:"-" }}</div></div>
-            <div class="card-row"><div class="card-label">Tanggal Lahir</div><div class="card-value">{% if latest_checkup and latest_checkup.tanggal_lahir %}{{ latest_checkup.tanggal_lahir }}{% elif employee.tanggal_lahir %}{{ employee.tanggal_lahir }}{% else %}-{% endif %}</div></div>
-            <div class="card-row"><div class="card-label">Derajat Kesehatan</div><div class="card-value">{% if latest_checkup and latest_checkup.derajat_kesehatan %}{% with dk=latest_checkup.derajat_kesehatan|upper %}{% if dk == "P1" or dk == "P2" or dk == "P3" %}<span class="text-green-600 font-semibold">{{ dk }}</span>{% elif dk == "P4" %}<span class="text-yellow-600 font-semibold">{{ dk }}</span>{% elif dk == "P5" %}<span class="text-orange-600 font-semibold">{{ dk }}</span>{% elif dk == "P6" or dk == "P7" %}<span class="text-red-600 font-semibold">{{ dk }}</span>{% elif dk %}<span class="text-gray-700 font-semibold">{{ dk }}</span>{% else %}<span class="text-gray-400">-</span>{% endif %}{% endwith %}{% elif employee.derajat_kesehatan %}{% with dk=employee.derajat_kesehatan|upper %}{% if dk == "P1" or dk == "P2" or dk == "P3" %}<span class="text-green-600 font-semibold">{{ dk }}</span>{% elif dk == "P4" %}<span class="text-yellow-600 font-semibold">{{ dk }}</span>{% elif dk == "P5" %}<span class="text-orange-600 font-semibold">{{ dk }}</span>{% elif dk == "P6" or dk == "P7" %}<span class="text-red-600 font-semibold">{{ dk }}</span>{% elif dk %}<span class="text-gray-700 font-semibold">{{ dk }}</span>{% else %}<span class="text-gray-400">-</span>{% endif %}{% endwith %}{% else %}<span class="text-gray-400">-</span>{% endif %}</div></div>
-            <div class="card-row"><div class="card-label">Berat</div><div class="card-value">{% if latest_checkup and latest_checkup.berat %}{{ latest_checkup.berat }}{% elif employee.berat %}{{ employee.berat }}{% else %}-{% endif %}</div></div>
-            <div class="card-row"><div class="card-label">Tinggi</div><div class="card-value">{% if latest_checkup and latest_checkup.tinggi %}{{ latest_checkup.tinggi }}{% elif employee.tinggi %}{{ employee.tinggi }}{% else %}-{% endif %}</div></div>
-            <div class="card-row"><div class="card-label">BMI</div><div class="card-value">{% if latest_checkup and latest_checkup.bmi %}{{ latest_checkup.bmi }}{% elif employee.bmi %}{{ employee.bmi }}{% else %}-{% endif %}</div></div>
-            <div class="card-row"><div class="card-label">BMI Category</div><div class="card-value">{{ employee.bmi_category|default:"-" }}</div></div>
-            <div class="card-row"><div class="card-label">Kontak Darurat</div><div class="card-value">{{ employee.kontak_darurat|default:"-" }}</div></div>
-          </div>
-          <div class="card">
-            <div class="card-header">MCU</div>
-            <div class="card-row"><div class="card-label">Tanggal MCU</div><div class="card-value">{{ employee.tanggal_MCU|default:"-" }}</div></div>
-            <div class="card-row"><div class="card-label">Expired MCU</div><div class="card-value">{{ employee.expired_MCU|default:"-" }}</div></div>
-            <div class="card-row"><div class="card-label">Estimasi Hari ke Expired</div><div class="card-value">{{ mcu_expiry_estimate|default:"-" }}</div></div>
-          </div>
-        </div>
+        
         <!-- MCU DataFrame -->
         <div class="mt-6 p-4 bg-white shadow rounded">
           <h3 class="text-lg font-semibold mb-3">MCU</h3>
@@ -433,22 +402,7 @@
             </tbody>
           </table>
         </div>
-        <div class="mobile-card">
-          {% if latest_checkup %}
-          <div class="card">
-            <div class="card-header">Data Checkup Terakhir</div>
-            <div class="card-row"><div class="card-label">Tanggal Checkup</div><div class="card-value">{{ latest_checkup.tanggal_checkup }}</div></div>
-            <div class="card-row"><div class="card-label">Gula Darah Puasa</div><div class="card-value {% if latest_checkup.flags and latest_checkup.flags.gdp_high %}text-red-600 font-semibold{% endif %}">{{ latest_checkup.gula_darah_puasa|default:"-" }}</div></div>
-            <div class="card-row"><div class="card-label">Gula Darah Sewaktu</div><div class="card-value {% if latest_checkup.flags and latest_checkup.flags.gds_high %}text-red-600 font-semibold{% endif %}">{{ latest_checkup.gula_darah_sewaktu|default:"-" }}</div></div>
-            <div class="card-row"><div class="card-label">Cholesterol</div><div class="card-value {% if latest_checkup.flags and latest_checkup.flags.chol_high %}text-red-600 font-semibold{% endif %}">{{ latest_checkup.cholesterol|default:"-" }}</div></div>
-            <div class="card-row"><div class="card-label">Asam Urat</div><div class="card-value {% if latest_checkup.flags and latest_checkup.flags.asam_high %}text-red-600 font-semibold{% endif %}">{{ latest_checkup.asam_urat|default:"-" }}</div></div>
-            <div class="card-row"><div class="card-label">Lingkar Perut (cm)</div><div class="card-value">{{ latest_checkup.lingkar_perut|default:"-" }}</div></div>
-            <div class="card-row"><div class="card-label">Status</div><div class="card-value">{% if latest_checkup and latest_checkup.status %}<span class="badge text-white {% if latest_checkup.status == 'Unwell' %}bg-red-500{% else %}bg-green-500{% endif %}">{{ latest_checkup.status }}</span>{% else %}<span class="text-gray-500">-</span>{% endif %}</div></div>
-          </div>
-          {% else %}
-          <div class="card"><div class="card-header">Data Checkup Terakhir</div><div class="card-row"><div class="card-label">Info</div><div class="card-value">Belum ada data medical checkup.</div></div></div>
-          {% endif %}
-        </div>
+        
         {% else %}
           <div class="p-4 bg-gray-50 border rounded text-gray-500">Belum ada data medical checkup.</div>
         {% endif %}
