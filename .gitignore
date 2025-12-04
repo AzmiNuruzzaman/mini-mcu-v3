@@ -21,6 +21,7 @@ venv/
 /db.sqlite3
 /media/
 /staticfiles/
+postgres_data/
 
 # Environment variables
 .env
